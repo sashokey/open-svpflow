@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "rate_mode": "monitor_auto",
+  "interpolation_mode": 3,
+  "shader": 23,
+  "artifacts_masking": {
+    "cover": 80,
+    "area": 0
+  },
+  "motion_precision": 2,
+  "motion_grid": {
+    "block": 16,
+    "overlap": 2
+  },
+  "decrease_grid_step": 0,
+  "search_radius": {
+    "fine": 0,
+    "coarse": -8
+  },
+  "wide_search": true,
+  "coarse_width": 1050,
+  "scene_changes": "nearest",
+  "duplicate_frames_removal": false
+}
