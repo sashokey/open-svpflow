@@ -1,6 +1,6 @@
 {
-  "version": "0.1.3-mac.1",
+  "version": "0.1.3-mac.2",
   "draft": false,
   "prerelease": true,
-  "notes": "Minimal macOS integration based on upstream open-svpflow 0.1.3. Fixes signed vector decoding when the vertical component is negative, with regression tests for the real producer/consumer paths. Adds a launcher and configurable VapourSynth graph for separately installed mpv, Python and VapourSynth. Includes eleven interpolation controls documented in README. The ARM64 plugins are built and tested in CI and ad-hoc signed; they are not notarized. No player dependencies are bundled. This is a prerelease; local headless tests do not establish screen presentation or universal quality improvements."
+  "notes": "Removes the wrapper's fixed automatic 120-FPS ceiling. Without --fps, interpolation now targets the display refresh reported by mpv, including fractional refresh rates and rates above 240 Hz. Adds rate-selection regressions and a headless extracted-package mpv test with simulated 240-Hz refresh. The native engine and interpolation-quality settings are unchanged. Actual sustainable throughput depends on the hardware and workload. ARM64 plugins are built and tested in CI, ad-hoc signed and not notarized. mpv, Python and VapourSynth remain separate dependencies."
 }

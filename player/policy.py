@@ -23,7 +23,6 @@ DEFAULT_SETTINGS = {
     "scene_changes": "nearest",
     "duplicate_frames_removal": False,
 }
-TARGETS = tuple(Fraction(value) for value in ("48000/1001", "48", "50", "60000/1001", "60", "119", "120000/1001", "120"))
 PLUGIN_NAMES = ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib")
 
 
@@ -113,20 +112,12 @@ def select_rate(source, display, profile="auto", explicit="auto"):
     if not math.isfinite(hz) or hz <= 0:
         need(profile == "auto", "Display refresh is unavailable; pass --fps explicitly")
         return None
-    limit = Fraction(str(hz))
-    for nominal in TARGETS:
-        if abs(limit - nominal) <= Fraction(1, 100000):
-            limit = nominal
-            break
-    candidates = [target for target in TARGETS if source * 2 <= target <= limit]
-    if limit >= Fraction(60000, 1001):
-        candidates = [target for target in candidates if target >= Fraction(60000, 1001)]
-    if limit >= 119:
-        candidates = [target for target in candidates if target >= 119]
-    if not candidates:
+    denominator_limit = min(1001000, 2147483647 // source.numerator)
+    target = Fraction(str(hz)).limit_denominator(denominator_limit)
+    if target < source * 2 or target.numerator > 2147483647 or target.denominator > 2147483647:
         need(profile == "auto", "Display refresh cannot support the interpolation target")
         return None
-    return max(candidates, key=lambda target: ((target / source).denominator == 1, target))
+    return target
 
 
 def engine_options(settings, source, target, bits, gpu=True):

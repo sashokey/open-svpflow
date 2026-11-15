@@ -18,12 +18,12 @@ Extract the ARM64 ZIP from [Releases](https://github.com/sashokey/open-svpflow/r
 From the extracted directory, replace the movie path and run:
 
 ```sh
-python3 player/launch.py --profile smooth --fps 120000/1001 --settings player/settings.json -- "/path/to/movie.mkv"
+python3 player/launch.py --profile smooth --settings player/settings.json -- "/path/to/movie.mkv"
 ```
 
 ## Usage notes
 
-The default `auto` profile uses mpv's reported display refresh; no compatible rate selects original-rate playback. `smooth` requires interpolation; `original` bypasses it. Automatic targets reach at most 120 FPS. `--fps` accepts an integer or fraction up to 240 FPS and at least twice the source rate, such as `60`, `120000/1001` or `240`.
+Without `--fps`, the target follows mpv's reported display refresh, including fractional rates, with no fixed automatic FPS ceiling. A 240 Hz display selects 240 FPS. The reported rate is approximated as needed to fit native timing fields and must be at least twice the source. The default `auto` profile keeps the original rate when refresh is unavailable or incompatible; `smooth` requires interpolation; `original` bypasses it. `--fps` still accepts an explicit integer or fraction up to 240 FPS and at least twice the source rate, such as `60`, `120000/1001` or `240`.
 
 Pass `--settings player/settings.json` to use edits to that file. Without it, built-in defaults apply. All JSON fields are required. `--mpv`, `--plugin-dir` and `--vsscript` override dependency locations; `--start` sets the start time and `--duration` limits a run to at most 300 seconds.
 

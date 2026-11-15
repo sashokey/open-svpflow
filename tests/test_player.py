@@ -26,12 +26,52 @@ def policy():
 
 
 class RateTests(unittest.TestCase):
-    def test_fractional_movie_prefers_exact_fivefold_rate(self):
+    def test_fractional_movie_follows_monitor_instead_of_fivefold_limit(self):
         p = policy()
-        self.assertEqual(p.select_rate(Fraction(24000, 1001), 240, "auto"), Fraction(120000, 1001))
+        self.assertEqual(p.select_rate(Fraction(24000, 1001), 240, "auto"), Fraction(240))
 
-    def test_integer_movie_uses_120_instead_of_monitor_240(self):
-        self.assertEqual(policy().select_rate(Fraction(24), 240, "auto"), Fraction(120))
+    def test_integer_movie_uses_full_monitor_refresh(self):
+        self.assertEqual(policy().select_rate(Fraction(24), 240, "auto"), Fraction(240))
+
+    def test_automatic_rate_is_not_limited_to_a_fixed_refresh_list(self):
+        p = policy()
+        for display, expected in ((144, Fraction(144)), (165, Fraction(165)), (240.0024, Fraction(300003, 1250)), (360, Fraction(360))):
+            for profile in ("auto", "smooth"):
+                with self.subTest(display=display, profile=profile):
+                    self.assertEqual(p.select_rate(Fraction(24), display, profile), expected)
+
+    def test_fractional_monitor_refresh_keeps_a_usable_rational_rate(self):
+        target = policy().select_rate(Fraction(24000, 1001), 239.76023976023976)
+        self.assertEqual(target, Fraction(240000, 1001))
+
+    def test_precise_monitor_refresh_keeps_native_phase_denominator_in_range(self):
+        p = policy()
+        source = Fraction(24000, 1001)
+        for display in (239.999994, 144.000001, 59.999999):
+            with self.subTest(display=display):
+                target = p.select_rate(source, display)
+                self.assertLessEqual(abs(float(target) - display), 0.00001)
+                self.assertLessEqual((target / source).denominator, 2147483647)
+
+    def test_automatic_monitor_rate_reaches_native_options(self):
+        p = policy()
+        target = p.select_rate(Fraction(24000, 1001), 240.0024)
+        smooth = json.loads(p.engine_options(p.DEFAULT_SETTINGS, Fraction(24000, 1001), target, 10)["smooth"])
+        self.assertEqual(smooth["rate"], {"num": 300003, "den": 1250, "abs": True})
+
+    def test_incompatible_monitor_rate_preserves_profile_behavior(self):
+        p = policy()
+        self.assertIsNone(p.select_rate(Fraction(60), 100, "auto"))
+        with self.assertRaises(ValueError):
+            p.select_rate(Fraction(60), 100, "smooth")
+
+    def test_invalid_or_unrepresentable_monitor_rate_preserves_profile_behavior(self):
+        p = policy()
+        for display in (None, "unknown", 0, -1, float("nan"), float("inf"), 2147483648):
+            with self.subTest(display=display):
+                self.assertIsNone(p.select_rate(Fraction(24), display, "auto"))
+                with self.assertRaises(ValueError):
+                    p.select_rate(Fraction(24), display, "smooth")
 
     def test_explicit_rate_supports_bbb_30_to_60_without_display(self):
         self.assertEqual(policy().select_rate(Fraction(30), 0, "smooth", "60"), Fraction(60))

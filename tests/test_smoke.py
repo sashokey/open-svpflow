@@ -41,6 +41,14 @@ class IntermediateTests(unittest.TestCase):
 
 
 class MpvSmokeTests(unittest.TestCase):
+    def test_automatic_smoke_uses_simulated_refresh_without_explicit_target(self):
+        module = smoke_module('smoke_mpv')
+        command = module.build_command(Path('/extracted package'), Path('/temporary motion.y4m'), refresh=240)
+        self.assertNotIn('--fps', command)
+        self.assertIn('--mpv-option=--vo-null-fps=240', command)
+        self.assertIn('--mpv-option=--vo=null', command)
+        self.assertIn('--mpv-option=--audio=no', command)
+
     def test_package_smoke_disables_display_and_audio_and_checks_qhd(self):
         module = smoke_module('smoke_mpv')
         package = Path('/extracted package')

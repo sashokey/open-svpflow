@@ -21,10 +21,13 @@ def write_video(path):
             stream.write(bytes([128]) * (width * height // 2))
 
 
-def build_command(package, movie):
-    return [
+def build_command(package, movie, refresh=None):
+    command = [
         sys.executable, str(package / "player" / "launch.py"),
-        "--profile", "smooth", "--fps", "48",
+        "--profile", "smooth",
+    ]
+    command.extend(["--fps", "48"] if refresh is None else ["--mpv-option=--vo-null-fps=" + str(refresh)])
+    return command + [
         "--mpv-option=--vo=null", "--mpv-option=--audio=no",
         "--mpv-option=--frames=12", "--mpv-option=--untimed",
         "--mpv-option=--terminal=yes",
@@ -40,21 +43,23 @@ def main():
     with tempfile.TemporaryDirectory(prefix="open-svpflow-smoke-") as directory:
         movie = Path(directory) / "synthetic motion.y4m"
         write_video(movie)
-        process = subprocess.Popen(build_command(args.package, movie), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
-        try:
-            output, _ = process.communicate(timeout=90)
-        except subprocess.TimeoutExpired:
+        for refresh in (None, 240):
+            target = 48 if refresh is None else refresh
+            process = subprocess.Popen(build_command(args.package, movie, refresh), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
             try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            output, _ = process.communicate(timeout=5)
+                output, _ = process.communicate(timeout=90)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                output, _ = process.communicate(timeout=5)
+                print(output)
+                raise SystemExit("External mpv interpolation smoke timed out")
             print(output)
-            raise SystemExit("External mpv interpolation smoke timed out")
-        print(output)
-        if process.returncode != 0 or "OSVP_SMOKE=2560x1440" not in output or "interpolation target 48 FPS" not in output:
-            raise SystemExit("External mpv interpolation smoke failed")
-    print("PASS: external mpv ran the packaged graph and plugins with QHD filtered output; this is not a presentation or throughput benchmark")
+            if process.returncode != 0 or "OSVP_SMOKE=2560x1440" not in output or "interpolation target " + str(target) + " FPS" not in output:
+                raise SystemExit("External mpv interpolation smoke failed at " + str(target) + " FPS")
+    print("PASS: external mpv ran the packaged graph and plugins with QHD output at explicit 48 FPS and automatic 240 FPS; this is not a presentation or throughput benchmark")
 
 
 if __name__ == "__main__":
