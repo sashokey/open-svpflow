@@ -1,3 +1,5 @@
+// Modified to correct signed-low vector decoding and add regression tests.
+
 #[derive(Clone, Copy)]
 pub struct VectorData {
     pub flags: i32,
@@ -497,6 +499,13 @@ fn vector_count(shape: VectorShape) -> Option<usize> {
     usize::try_from(shape.width.max(0).checked_mul(shape.height.max(0))?).ok()
 }
 
+pub(crate) fn decode_vector_components(packed: u32) -> (i16, i16) {
+    let [y0, y1, x0, x1] = packed.to_le_bytes();
+    let dy = i16::from_le_bytes([y0, y1]);
+    let dx = i16::from_le_bytes([x0, x1]).wrapping_add(i16::from(dy < 0));
+    (dx, dy)
+}
+
 fn decode_region(payload: &[u8], offset: usize, count: usize) -> Option<Vec<DecodedVector>> {
     let expected = i32::try_from(2usize.checked_mul(count)?.checked_add(1)?).ok()?;
     if read_i32_slice(payload, offset)? != expected {
@@ -507,11 +516,10 @@ fn decode_region(payload: &[u8], offset: usize, count: usize) -> Option<Vec<Deco
     for _ in 0..count {
         let raw0 = read_u32_slice(payload, cursor)?;
         let raw1 = read_u32_slice(payload, cursor + 4)?;
-        let rotated = raw0.rotate_right(16);
-        let parts = rotated.to_le_bytes();
+        let (dx, dy) = decode_vector_components(raw0);
         vectors.push(DecodedVector {
-            dx: i16::from_le_bytes([parts[0], parts[1]]),
-            dy: i16::from_le_bytes([parts[2], parts[3]]),
+            dx,
+            dy,
             score: raw1 & 0x00FF_FFFF,
             luma: (raw1 >> 24) as u8,
         });
@@ -595,4 +603,91 @@ fn byte(raw: u64, shift: u32) -> i32 {
 
 fn word(raw: u64, shift: u32) -> i32 {
     ((raw >> shift) & 0xFFFF) as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vector_payload_preserves_signed_low_wire_format() {
+        let data = VectorData::generated_source_8bit(40, 4, 0);
+        let vectors = [
+            (-8, -4),
+            (8, -4),
+            (0, -1),
+            (8, 4),
+            (i16::MIN, i16::MIN),
+            (i16::MIN, i16::MAX),
+            (i16::MAX, i16::MIN),
+            (i16::MAX, i16::MAX),
+            (0, 0),
+            (-8, 4),
+        ]
+        .map(|(dx, dy)| DecodedVector {
+            dx,
+            dy,
+            score: 0x0012_3456,
+            luma: 0xAB,
+        });
+        let payload = encode_vector_payload(data, Some(&vectors), &vectors);
+        let expected = [
+            0xFFF7_FFFC,
+            0x0007_FFFC,
+            0xFFFF_FFFF,
+            0x0008_0004,
+            0x7FFF_8000,
+            0x8000_7FFF,
+            0x7FFE_8000,
+            0x7FFF_7FFF,
+            0,
+            0xFFF8_0004,
+        ];
+        for offset in [0x44, 0x98] {
+            for (index, packed) in expected.into_iter().enumerate() {
+                assert_eq!(read_u32_slice(&payload, offset + index * 8), Some(packed));
+                assert_eq!(
+                    read_u32_slice(&payload, offset + index * 8 + 4),
+                    Some(0xAB12_3456)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vector_payload_roundtrips_signed_components() {
+        let data = VectorData::generated_source_8bit(40, 4, 0);
+        let expected = [
+            (-8, -4, 1, 2),
+            (8, -4, 0x0012_3456, 127),
+            (0, -1, 0x00FF_FFFF, 255),
+            (8, 4, 0, 0),
+            (i16::MIN, i16::MIN, 7, 19),
+            (i16::MIN, i16::MAX, 13, 23),
+            (i16::MAX, i16::MIN, 17, 29),
+            (i16::MAX, i16::MAX, 31, 37),
+            (0, 0, 41, 43),
+            (-8, 4, 47, 53),
+        ];
+        let previous = expected.map(|(dx, dy, score, luma)| DecodedVector {
+            dx,
+            dy,
+            score,
+            luma,
+        });
+        let current: Vec<_> = previous.iter().copied().rev().collect();
+        let payload = encode_vector_payload(data, Some(&previous), &current);
+        let decoded = decode_vectors(&payload, data.flags, data.grid, data.flags).unwrap();
+        let components = |vectors: Vec<DecodedVector>| {
+            vectors
+                .into_iter()
+                .map(|vector| (vector.dx, vector.dy, vector.score, vector.luma))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(components(decoded.previous.unwrap()), expected);
+        assert_eq!(
+            components(decoded.current.unwrap()),
+            expected.into_iter().rev().collect::<Vec<_>>()
+        );
+    }
 }

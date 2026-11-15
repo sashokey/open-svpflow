@@ -1,3 +1,5 @@
+// Modified to correct signed-low vector decoding and add regression tests.
+
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_possible_wrap,
@@ -5,7 +7,7 @@
     clippy::cast_sign_loss
 )]
 
-use crate::metadata::VectorData;
+use crate::metadata::{VectorData, decode_vector_components};
 
 const LOG2_STEP: [i8; 32] = [
     0, 1, 2, 2, -1, 3, 3, 3, -1, -1, -1, 4, -1, 4, -1, 4, -1, -1, -1, -1, -1, -1, -1, 5, -1, -1,
@@ -451,9 +453,10 @@ fn decode_set(payload: &[u8], offset: usize, set: &mut [BlockVector]) -> bool {
     for (vector, raw) in set.iter_mut().zip(bytes.as_chunks::<8>().0) {
         let packed = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
         let extra = u32::from_le_bytes([raw[4], raw[5], raw[6], raw[7]]);
+        let (x, y) = decode_vector_components(packed);
         *vector = BlockVector {
-            x: (packed >> 16) as u16 as i16,
-            y: packed as u16 as i16,
+            x,
+            y,
             sad: (extra & 0x00FF_FFFF) as i32,
             luma: (extra >> 24) as u8,
         };
@@ -2484,4 +2487,70 @@ mod row {
     };
 
     const _: () = assert!(MAX_STEP.is_multiple_of(8));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::metadata::{DecodedVector, encode_vector_payload};
+
+    #[test]
+    fn field_updates_from_signed_vector_payload() {
+        let data = VectorData::generated_source_8bit(40, 4, 0);
+        let expected = [
+            (-8, -4, 1, 2),
+            (8, -4, 0x0012_3456, 127),
+            (0, -1, 0x00FF_FFFF, 255),
+            (8, 4, 0, 0),
+            (i16::MIN, i16::MIN, 7, 19),
+            (i16::MIN, i16::MAX, 13, 23),
+            (i16::MAX, i16::MIN, 17, 29),
+            (i16::MAX, i16::MAX, 31, 37),
+            (0, 0, 41, 43),
+            (-8, 4, 47, 53),
+        ];
+        let previous = expected.map(|(dx, dy, score, luma)| DecodedVector {
+            dx,
+            dy,
+            score,
+            luma,
+        });
+        let current: Vec<_> = previous.iter().copied().rev().collect();
+        let payload = encode_vector_payload(data, Some(&previous), &current);
+        let mut field = VectorField::new(FieldShape::from_data(&data));
+        assert!(field.update(&payload));
+        let mut vectors = Vec::new();
+        field.cover_vectors(&mut vectors);
+        assert_eq!(
+            vectors,
+            [
+                -8, -4, 8, -4, 0, -1, 8, 4, i16::MIN, i16::MIN, i16::MIN, i16::MAX,
+                i16::MAX, i16::MIN, i16::MAX, i16::MAX, 0, 0, -8, 4, -8, 4, 0, 0,
+                i16::MAX, i16::MAX, i16::MAX, i16::MIN, i16::MIN, i16::MAX, i16::MIN,
+                i16::MIN, 8, 4, 0, -1, 8, -4, -8, -4,
+            ]
+        );
+        let extras = |set: &[BlockVector]| {
+            set.iter()
+                .map(|vector| (vector.sad, vector.luma))
+                .collect::<Vec<_>>()
+        };
+        let expected_extras = [
+            (1, 2),
+            (0x0012_3456, 127),
+            (0x00FF_FFFF, 255),
+            (0, 0),
+            (7, 19),
+            (13, 23),
+            (17, 29),
+            (31, 37),
+            (41, 43),
+            (47, 53),
+        ];
+        assert_eq!(extras(&field.backward), expected_extras);
+        assert_eq!(
+            extras(&field.forward),
+            expected_extras.into_iter().rev().collect::<Vec<_>>()
+        );
+    }
 }
