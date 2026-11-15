@@ -1,88 +1,50 @@
-# open-svpflow
+Native macOS ARM64 interpolation plugins with a launcher for separately installed mpv. Based on [upstream open-svpflow 0.1.3](https://github.com/Z1xus/open-svpflow/tree/badc0de2282d2300303f5b9461919a2bc4dbcf65). The engine patch fixes signed motion-vector decoding; the other additions provide playback configuration, tests and packaging. Upstream already supports ARM64.
 
-<a href="https://pypi.org/project/open-svpflow/"><picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/pypi/v/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=dark"><img alt="PyPI version" src="https://www.shieldcn.dev/pypi/v/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=light"></picture></a>
-<a href="https://pypistats.org/packages/open-svpflow"><picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/pypi/dm/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=dark"><img alt="PyPI downloads" src="https://www.shieldcn.dev/pypi/dm/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=light"></picture></a>
-<a href="https://github.com/Z1xus/open-svpflow/actions/workflows/nightly-release.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/ci/Z1xus/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=dark"><img alt="CI status" src="https://www.shieldcn.dev/github/ci/Z1xus/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=light"></picture></a>
-<a href="https://github.com/Z1xus/open-svpflow/releases"><picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/downloads/Z1xus/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=dark"><img alt="Total downloads" src="https://www.shieldcn.dev/github/downloads/Z1xus/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=light"></picture></a>
-<a href="https://github.com/Z1xus/open-svpflow/commits/main"><picture><source media="(prefers-color-scheme: dark)" srcset="https://www.shieldcn.dev/github/last-commit/Z1xus/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=dark"><img alt="Last commit" src="https://www.shieldcn.dev/github/last-commit/Z1xus/open-svpflow.svg?variant=secondary&amp;size=xs&amp;mode=light"></picture></a>
+Playback requires an Apple Silicon Mac, Python 3.9+, VapourSynth API 4 and mpv with the VapourSynth filter. Local checks cover macOS 27.
 
-open-svpflow is a drop-in open-source replacement for [SVPFlow](https://www.svp-team.com/wiki/Plugins:_SVPflow)'s VapourSynth plugins in Rust, reverse engineered from version 4.3.0.168. It runs up to 3x faster on CPU and up to 2.6x faster on GPU, adds [a few things](#on-top-of-svpflow) the original doesn't have, and works in places where the original doesn't.
+## Installation
 
-It started as a side project, mostly to see if I could get couleur's [smoothie-rs](https://github.com/couleur-tweak-tips/smoothie-rs) running in a browser. That became the [demo](https://smoothie.z1x.us), which runs open-svpflow client-side as WASM with WebGPU (about 2-3x slower than native, since WASM can't use AVX2). It was only meant as a proof of concept, but it grew into another project, [interpolini](https://github.com/Z1xus/interpolini), which is meant as a showcase of how much faster you can get without VapourSynth and Python in the way.
-
-## Parity with SVPFlow
-
-- [svpflow1](crates/svpflow1): Super and Analyse, including super-frame pyramids, multi-level predictors, SAD/SATD and chroma costs, and hex2, UMH, and exhaustive motion search.
-- [svpflow2](crates/svpflow2): SmoothFps rendering for algorithms 1, 2, 11, 13, 21, 22, and 23, with scene handling, masks, CPU rendering, and the GPU path.
-- [AviSynth+](#avisynth) support with the original function names.
-
-Output matches the original byte for byte in everything I've tested, on both CPU and GPU. GPU algorithms 1 and 2 are the exception, since the original reads uninitialized memory there and doesn't even match its own previous run (±1 on about 0.01% of pixels, same as ours). So it should work anywhere SVPFlow already does, whether that's [smoothie](https://github.com/couleur-tweak-tips/smoothie-rs), [SVP](https://www.svp-team.com) itself, [mpv](https://mpv.io) or your own scripts.
-
-Benchmarked on a 1080p 200 fps Counter-Strike 2 clip interpolated to 1920 fps with [smoothie's](https://github.com/couleur-tweak-tips/smoothie-rs) settings (Ryzen 5 7600X, RTX 4060, Linux). You can run it yourself with [scripts/bench.py](scripts/bench.py):
-
-| Preset | Path | Original | open-svpflow | Speed vs original |
-| --- | --- | ---: | ---: | ---: |
-| faster | CPU | 304.2 fps | 901.4 fps | 2.96x |
-| faster | GPU | 1262.9 fps | 2597.5 fps | 2.06x |
-| medium (default) | CPU | 224.6 fps | 620.9 fps | 2.76x |
-| medium (default) | GPU | 324.1 fps | 848.6 fps | 2.62x |
-
-The speedup mainly comes from AVX2/AVX-512 motion search, running part of that search on the GPU (when using GPU mode), and caching work the original redoes for every frame.
-
-## On top of SVPFlow
-
-- [VapourSynth](https://www.vapoursynth.com) API 4 support, so it works on current VapourSynth (R80 and newer can't load the original at all, since it only has API 3).
-- Native I444 input and output.
-- 10-bit and 16-bit sources on the CPU too, and 16-bit on the GPU actually works.
-- SmoothFpsBlend, which interpolates and frame-blends on the GPU in one go, so it's about 2x faster than blending separately (build with --no-default-features if you don't want it).
-- Halve and DoubleVectors, which let the motion search run on a half-size frame, a lot faster for a small quality loss.
-- SVAnalyse("{exact:false}") lets the motion search take shortcuts and run on the GPU with gpu:1, which makes it about 2x faster again. The vectors differ slightly from SVPFlow (within 0.2 dB PSNR) and it needs more VRAM, so it's opt-in.
-- SVSuper("{pel:2,gpu:1,lean:true}") (pel 1 or 2) skips the subpel and reduced levels when the GPU analyse chain builds them itself with exact:false, which frees a lot of CPU and memory. Only SVAnalyse and the SmoothFps filters here can use such a super clip.
-- A [C API](crates/svpflow-capi/include/open_svpflow.h) for running it without VapourSynth or AviSynth (cargo build --release -p svpflow-capi).
-
-### SmoothFps options
-
-All of these are off by default.
-
-- mask:{peel:true} learns the HUD and its opacity for each pixel from how the scene moves behind it, takes it off before the warp and puts it back after. Tune it with mask:{peel:{limit:6}}.
-- mask:{still:true} finds text, logos and other things that stay in place and keeps them from smearing. Tune it with mask:{still:{limit:4.5,edge:5,tolerance:30}}. svp2.Still(clip, source) does the same for frames from any other interpolator.
-- mask:{image:id} keeps the source frame where a mask from osvp_mask_create is black. osvp_hold does the same for frames from any other interpolator.
-- dedup:0.5 skips a frame that repeats the one before it and stretches the next motion over both frame times. The number is how different two frames can be and still count as a repeat.
-
-## Install
+Follow the official instructions for [mpv](https://mpv.io/installation/), [Python](https://www.python.org/downloads/macos/) and [VapourSynth](https://www.vapoursynth.com/doc/installation.html). With an existing Homebrew installation:
 
 ```sh
-pip install open-svpflow
+brew install mpv vapoursynth
+mpv --vf=help
 ```
 
-It installs with an assumption that you already have VapourSynth installed in the same Python environment (we deliberately not include it as a dependency). Wheels are available for Windows x64, Linux x64 and arm64, and macOS x64 and arm64.
+The filter list must include `vapoursynth`. Homebrew supplies a matching Python environment for VapourSynth; the launcher discovers that environment.
 
-## AviSynth
+Extract the ARM64 ZIP from [Releases](https://github.com/sashokey/open-svpflow/releases) and keep its directories together. The plugins are ad-hoc signed, not notarized. mpv, Python and VapourSynth are not bundled.
 
-The plugins also load in [AviSynth+](https://avs-plus.net) 3.6 or newer:
-
-```avs
-LoadPlugin("svpflow1_vs.dll")
-LoadPlugin("svpflow2_vs.dll")
-super = SVSuper("{gpu:1}")
-vectors = SVAnalyse(super, "{}")
-SVSmoothFps(super, vectors, "{rate:{num:5,den:2}}", mt=8)
-```
-
-## Releases
-
-Download the latest nightly builds for Windows, Linux, and macOS from [Releases](https://github.com/Z1xus/open-svpflow/releases). Versioned releases follow semver and are published to [PyPI](https://pypi.org/project/open-svpflow/).
-
-Releases are reproducible and immutable once published. To reproduce the binaries, check out the release commit in a clean directory and use the matching build environment from the [build workflow](.github/workflows/build.yml). Run [build.sh](.github/build.sh) with the target from the release's BUILD.txt, then compare the files in dist with the extracted release.
-
-## Build
-
-[Rust](https://rustup.rs) 1.88 or newer:
+From the extracted directory, replace the movie path and run:
 
 ```sh
-cargo build --release -p svpflow1 -p svpflow2
+python3 player/launch.py --profile smooth --fps 120000/1001 --settings player/settings.json -- "/path/to/movie.mkv"
 ```
 
-The plugins end up in target/release: svpflow1_vs.dll and svpflow2_vs.dll on Windows, libsvpflow1_vs.so and libsvpflow2_vs.so on Linux, .dylib on macOS.
+## Usage notes
 
-Licensed under Apache-2.0.
+The default `auto` profile uses mpv's reported display refresh; no compatible rate selects original-rate playback. `smooth` requires interpolation; `original` bypasses it. Automatic targets reach at most 120 FPS. `--fps` accepts an integer or fraction up to 240 FPS and at least twice the source rate, such as `60`, `120000/1001` or `240`.
+
+Pass `--settings player/settings.json` to use edits to that file. Without it, built-in defaults apply. All JSON fields are required. `--mpv`, `--plugin-dir` and `--vsscript` override dependency locations; `--start` sets the start time and `--duration` limits a run to at most 300 seconds.
+
+| Control / JSON field | Default | Values and meaning |
+|---|---|---|
+| Frames interpolation mode / `interpolation_mode` | `3` | `0–3`; engine scene/interpolation mode |
+| SVP shader / `shader` | `23` | `21/22/23`; synthesis algorithm |
+| Artifacts masking / `artifacts_masking` | `cover:80, area:0` | Cover `1–100`, area `0–100`; engine mask controls |
+| Motion vectors precision / `motion_precision` | `2` | `1`: whole pixel; `2`: half pixel |
+| Motion vectors grid / `motion_grid` | `block:16, overlap:2` | Block `8/16/32`; overlap `0/1/2/3`: none, 1/8, 1/4, 1/2 block |
+| Decrease grid step / `decrease_grid_step` | `0` | `0/1`; enable one vector refinement stage |
+| Search radius / `search_radius` | `fine:0, coarse:-8` | Each `−10…10`; engine distances, not literal pixel radii |
+| Wide search / `wide_search` | `true` | `true/false`; wider search for bad vectors |
+| Width of top coarse level / `coarse_width` | `1050` | `128–2560` pixels |
+| Processing of scene changes / `scene_changes` | `nearest` | `nearest/blend`; scene-boundary fallback |
+| Duplicate frames removal / `duplicate_frames_removal` | `false` | `true/false`; engine duplicate-frame handling |
+
+Half-pixel precision requires `fine:0`. Refinement requires block16, overlap2 and `fine:0`. This adapter rejects duplicate removal with 10-bit synthesis. These are adapter constraints, not limits of every upstream API.
+
+The graph accepts constant-format YUV420P8/P10 at source rates up to 60 FPS. It produces fixed 2560×1440 output with 8-bit analysis and preserved 8/10-bit synthesis. Non-16:9 sources are resized to 16:9; use `original` to bypass the graph. OpenCL rendering is requested. A target FPS does not guarantee sustainable speed. Normal mpv handles display conversion; headless checks do not validate HDR-to-SDR presentation or audio synchronization.
+
+The wire format stores `(X << 16) + Y`. Negative Y borrows from the high word: the former decoder read `(-8,-4)` as `(-9,-4)`. The patch restores X in both metadata and motion-field readers, preserves the encoder and tests real roundtrips including signed boundaries. Scene protections, shaders and GPU kernels remain upstream. This correction does not establish universal perceptual improvement.
+
+The launcher adds no network requests, downloads or update checks and does not change permanent player settings. External dependencies retain their existing capabilities. For algorithms and direct APIs, see [upstream](https://github.com/Z1xus/open-svpflow).
