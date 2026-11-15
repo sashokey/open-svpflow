@@ -20,5 +20,15 @@
   "wide_search": true,
   "coarse_width": 1050,
   "scene_changes": "nearest",
-  "duplicate_frames_removal": false
+  "duplicate_frames_removal": false,
+  "output_bits": 8,
+  "backend": "gpu",
+  "gpu_device": 0,
+  "buffered_frames": "auto",
+  "concurrent_frames": "auto",
+  "native": {
+    "super": {},
+    "analyse": {},
+    "smooth": {}
+  }
 }

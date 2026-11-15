@@ -7,12 +7,18 @@ import subprocess
 import sys
 import tempfile
 
-from policy import DEFAULT_SETTINGS, build_command, read_settings
+from policy import build_command, read_settings, validate_settings
 
 
 def runtime_environment(vsscript=None, environment=None, config_root=None):
     result = dict(os.environ if environment is None else environment)
     if config_root is not None:
+        original = Path(result.get("XDG_CONFIG_HOME", ""))
+        if not original.is_absolute():
+            original = Path(result.get("HOME", str(Path.home()))) / ".config"
+        mpv_config = original / "mpv"
+        if mpv_config.is_dir():
+            (Path(config_root) / "mpv").symlink_to(mpv_config, target_is_directory=True)
         result["XDG_CONFIG_HOME"] = str(config_root)
     if vsscript is not None:
         path = Path(vsscript).expanduser().resolve()
@@ -56,24 +62,30 @@ def runtime_environment(vsscript=None, environment=None, config_root=None):
 
 
 def main(arguments=None):
-    parser = argparse.ArgumentParser(description="Interpolate a local movie using installed mpv and VapourSynth.")
+    parser = argparse.ArgumentParser(description="Interpolate media using installed mpv and VapourSynth.")
     parser.add_argument("--mpv", default="mpv")
     parser.add_argument("--plugin-dir", type=Path)
     parser.add_argument("--vsscript", type=Path)
     parser.add_argument("--settings", type=Path)
     parser.add_argument("--profile", choices=("auto", "smooth", "original"), default="auto")
     parser.add_argument("--fps", default="auto")
+    parser.add_argument("--bits", choices=("8", "10", "16", "source"))
+    parser.add_argument("--backend", choices=("gpu", "cpu"))
     parser.add_argument("--start", type=float)
     parser.add_argument("--duration", type=float)
     parser.add_argument("--mpv-option", action="append", default=[])
-    parser.add_argument("movie", type=Path)
+    parser.add_argument("movie")
     options = parser.parse_args(arguments)
     try:
         root = Path(__file__).resolve().parents[1]
         plugins = options.plugin_dir
         if plugins is None:
             plugins = root / "lib" if (root / "lib").is_dir() else root / "target" / "release"
-        settings = DEFAULT_SETTINGS if options.settings is None else read_settings(options.settings)
+        settings = validate_settings({}) if options.settings is None else read_settings(options.settings)
+        if options.bits is not None:
+            settings["output_bits"] = "source" if options.bits == "source" else int(options.bits)
+        if options.backend is not None:
+            settings["backend"] = options.backend
         command = build_command(options.mpv, options.movie, root / "player" / "graph.vpy", plugins, settings, options.profile, options.fps, options.mpv_option, options.start, options.duration)
         executable = shutil.which(command[0])
         if executable is None:
@@ -81,6 +93,10 @@ def main(arguments=None):
         command[0] = executable
         if options.profile == "original":
             return subprocess.run(command, env=dict(os.environ)).returncode
+        compatibility = root / "player" / "compat.lua"
+        if not compatibility.is_file():
+            raise ValueError("The player compatibility script is unavailable")
+        command.insert(1, "--script=" + str(compatibility))
         with tempfile.TemporaryDirectory(prefix="open-svpflow-vs-") as config_root:
             environment = runtime_environment(options.vsscript, config_root=config_root)
             return subprocess.run(command, env=environment).returncode

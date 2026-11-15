@@ -48,6 +48,7 @@ jobs:
         run: |
           vs_python="$(head -n 1 "$(command -v vspipe)")"
           vs_python="${vs_python#\#!}"
+          "$vs_python" -B tests/test_graph.py -v
           "$vs_python" -B tests/smoke_plugins.py --plugin-dir target/release
       - name: Package plugin distribution
         env:

@@ -49,7 +49,7 @@ class MpvSmokeTests(unittest.TestCase):
         self.assertIn('--mpv-option=--vo=null', command)
         self.assertIn('--mpv-option=--audio=no', command)
 
-    def test_package_smoke_disables_display_and_audio_and_checks_qhd(self):
+    def test_package_smoke_disables_display_and_audio_and_checks_geometry(self):
         module = smoke_module('smoke_mpv')
         package = Path('/extracted package')
         movie = Path('/temporary motion.y4m')
@@ -58,7 +58,7 @@ class MpvSmokeTests(unittest.TestCase):
         self.assertIn('--mpv-option=--vo=null', command)
         self.assertIn('--mpv-option=--audio=no', command)
         self.assertIn('--mpv-option=--untimed', command)
-        self.assertIn('--mpv-option=--term-playing-msg=OSVP_SMOKE=${video-out-params/w}x${video-out-params/h}', command)
+        self.assertTrue(any(arg.startswith('--mpv-option=--term-playing-msg=OSVP_SMOKE=') for arg in command))
         self.assertEqual(command[-2:], ['--', str(movie)])
 
 

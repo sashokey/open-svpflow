@@ -1,6 +1,6 @@
-Native macOS ARM64 interpolation plugins with a launcher for separately installed mpv. Based on [upstream open-svpflow 0.1.3](https://github.com/Z1xus/open-svpflow/tree/badc0de2282d2300303f5b9461919a2bc4dbcf65). The engine patch fixes signed motion-vector decoding; the other additions provide playback configuration, tests and packaging. Upstream already supports ARM64.
+Native macOS ARM64 interpolation plugins with a launcher for separately installed mpv. Based on [upstream open-svpflow 0.1.3](https://github.com/Z1xus/open-svpflow/tree/badc0de2282d2300303f5b9461919a2bc4dbcf65). Upstream already supports ARM64; the only engine change fixes signed motion-vector decoding. The wrapper supplies configurable playback without an application bundle.
 
-Playback requires an Apple Silicon Mac, Python 3.9+, VapourSynth API 4 and mpv with the VapourSynth filter. Local checks cover macOS 27.
+Requires an Apple Silicon Mac, Python 3.9+, VapourSynth API 4 and mpv with Lua, libavfilter and the VapourSynth filter. Local checks cover macOS 27.
 
 ## Installation
 
@@ -11,9 +11,9 @@ brew install mpv vapoursynth
 mpv --vf=help
 ```
 
-The filter list must include `vapoursynth`. Homebrew supplies a matching Python environment for VapourSynth; the launcher discovers that environment.
+The filter list must include `vapoursynth`. Homebrew supplies a matching Python environment, which the launcher discovers.
 
-Extract the ARM64 ZIP from [Releases](https://github.com/sashokey/open-svpflow/releases) and keep its directories together. The plugins are ad-hoc signed, not notarized. mpv, Python and VapourSynth are not bundled.
+Extract the ARM64 ZIP from [Releases](https://github.com/sashokey/open-svpflow/releases) and keep its directories together. Plugins are ad-hoc signed, not notarized. External dependencies are not bundled.
 
 From the extracted directory, replace the movie path and run:
 
@@ -23,28 +23,49 @@ python3 player/launch.py --profile smooth --settings player/settings.json -- "/p
 
 ## Usage notes
 
-Without `--fps`, the target follows mpv's reported display refresh, including fractional rates, with no fixed automatic FPS ceiling. A 240 Hz display selects 240 FPS. The reported rate is approximated as needed to fit native timing fields and must be at least twice the source. The default `auto` profile keeps the original rate when refresh is unavailable or incompatible; `smooth` requires interpolation; `original` bypasses it. `--fps` still accepts an explicit integer or fraction up to 240 FPS and at least twice the source rate, such as `60`, `120000/1001` or `240`.
+Without `--fps`, the target follows mpv's reported display refresh, including fractional rates. Pass `--fps 120000/1001` for an exact target. Rates must exceed the source and fit native timing fields; there is no fixed source/target FPS ceiling. The default `auto` profile keeps the original rate when refresh is unavailable or insufficient; `smooth` requires interpolation; `original` bypasses the wrapper filters. Source dimensions and sample aspect ratio are retained. Window/fullscreen scaling remains under normal mpv control, independently of monitor configuration.
 
-Pass `--settings player/settings.json` to use edits to that file. Without it, built-in defaults apply. All JSON fields are required. `--mpv`, `--plugin-dir` and `--vsscript` override dependency locations; `--start` sets the start time and `--duration` limits a run to at most 300 seconds.
+Settings use JSON, not a graphical menu. Pass `--settings player/settings.json` to use edits; omitted fields inherit defaults, including nested fields. `--bits 8|10|16|source` and `--backend gpu|cpu` override JSON. `--mpv`, `--plugin-dir` and `--vsscript` override dependency locations. `--start` and `--duration` accept start/length in seconds. Forward an mpv option with `--mpv-option=--option=value`.
 
 | Control / JSON field | Default | Values and meaning |
 |---|---|---|
-| Frames interpolation mode / `interpolation_mode` | `3` | `0–3`; engine scene/interpolation mode |
-| SVP shader / `shader` | `23` | `21/22/23`; synthesis algorithm |
-| Artifacts masking / `artifacts_masking` | `cover:80, area:0` | Cover `1–100`, area `0–100`; engine mask controls |
-| Motion vectors precision / `motion_precision` | `2` | `1`: whole pixel; `2`: half pixel |
-| Motion vectors grid / `motion_grid` | `block:16, overlap:2` | Block `8/16/32`; overlap `0/1/2/3`: none, 1/8, 1/4, 1/2 block |
-| Decrease grid step / `decrease_grid_step` | `0` | `0/1`; enable one vector refinement stage |
-| Search radius / `search_radius` | `fine:0, coarse:-8` | Each `−10…10`; engine distances, not literal pixel radii |
-| Wide search / `wide_search` | `true` | `true/false`; wider search for bad vectors |
-| Width of top coarse level / `coarse_width` | `1050` | `128–2560` pixels |
+| Frames interpolation mode / `interpolation_mode` | `3` | `0–3`; native scene/interpolation mode |
+| SVP shader / `shader` | `23` | `1/2/11/13/21/22/23/90–100`; native algorithm IDs |
+| Artifacts masking / `artifacts_masking` | `cover:80, area:0` | Nonnegative native integer cover/area values |
+| Motion vectors precision / `motion_precision` | `2` | `1/2/4`: whole/half/quarter pixel |
+| Motion vectors grid / `motion_grid` | `block:16, overlap:2` | Square block `4/8/16/32`; overlap `0/1/2/3`: none, 1/8, 1/4, 1/2 block; 4-pixel blocks have no overlap |
+| Decrease grid step / `decrease_grid_step` | `0` | `0–3` refinement stages, subject to remaining block/overlap size |
+| Search radius / `search_radius` | `fine:0, coarse:-8` | Native signed distances; negative values select adaptive search |
+| Wide search / `wide_search` | `true` | Wider search for bad vectors |
+| Width of top coarse level / `coarse_width` | `1050` | `0–2147483647` pixels; `0` disables width-based coarse selection |
 | Processing of scene changes / `scene_changes` | `nearest` | `nearest/blend`; scene-boundary fallback |
-| Duplicate frames removal / `duplicate_frames_removal` | `false` | `true/false`; engine duplicate-frame handling |
+| Duplicate frames removal / `duplicate_frames_removal` | `false` | Native duplicate handling; requires 8-bit synthesis |
+| Synthesis depth / `output_bits` | `8` | `8/10/16/source`; `source` preserves integer depth as 8/10/16, float becomes 16 |
+| Synthesis backend / `backend` | `gpu` | `gpu/cpu`; OpenCL is requested by default, with native CPU fallback |
+| GPU device / `gpu_device` | `0` | Native GPU index, starting at zero; ignored for CPU |
+| mpv buffering / `buffered_frames` | `auto` | Omit the override, using mpv's default of 4 per concurrent request; or `1–9999` |
+| mpv concurrency / `concurrent_frames` | `auto` | Omit the override, using mpv's automatic logical-core count; or `1–99` |
+| Advanced native options / `native` | Empty objects | `super`, `analyse`, `smooth`; recursively override generated algorithm options |
 
-Half-pixel precision requires `fine:0`. Refinement requires block16, overlap2 and `fine:0`. This adapter rejects duplicate removal with 10-bit synthesis. These are adapter constraints, not limits of every upstream API.
+For example, a partial settings file can tune search, scene thresholds, masks and rectangular blocks directly:
 
-The graph accepts constant-format YUV420P8/P10 at source rates up to 60 FPS. It produces fixed 2560×1440 output with 8-bit analysis and preserved 8/10-bit synthesis. Non-16:9 sources are resized to 16:9; use `original` to bypass the graph. OpenCL rendering is requested. A target FPS does not guarantee sustainable speed. Normal mpv handles display conversion; headless checks do not validate HDR-to-SDR presentation or audio synchronization.
+```json
+{
+  "output_bits": 10,
+  "native": {
+    "super": {"scale": {"up": 1}},
+    "analyse": {"block": {"w": 16, "h": 8}, "main": {"search": {"type": 3}}},
+    "smooth": {"scene": {"limits": {"scene": 3500}}, "mask": {"still": true}}
+  }
+}
+```
 
-The wire format stores `(X << 16) + Y`. Negative Y borrows from the high word: the former decoder read `(-8,-4)` as `(-9,-4)`. The patch restores X in both metadata and motion-field readers, preserves the encoder and tests real roundtrips including signed boundaries. Scene protections, shaders and GPU kernels remain upstream. This correction does not establish universal perceptual improvement.
+The trees follow the [SVPflow API](https://www.svp-team.com/wiki/Manual:SVPflow) as implemented by [open-svpflow](https://github.com/Z1xus/open-svpflow). This exposes engine options rather than promising that every feature of official SVP is implemented identically. Native overrides apply after the simple controls. Timing (`smooth.rate`) and backend selection (`super.gpu`, `analyse.gpu`, `smooth.api/gpuid/render`) are managed by the wrapper; use the dedicated controls instead. Unknown engine keys follow upstream parsing behavior.
 
-The launcher adds no network requests, downloads or update checks and does not change permanent player settings. External dependencies retain their existing capabilities. For algorithms and direct APIs, see [upstream](https://github.com/Z1xus/open-svpflow).
+Real engine constraints remain: scene mode `2` requires at least a 2× rate; refinement cannot halve a one-pixel overlap or a block below the native minimum; CPU synthesis requires even final overlap. High-depth CPU synthesis requires precision 1/2 and a reference shader without incompatible debug flags. Block mode is CPU-only and cubic mode GPU-only. Invalid combinations report an error rather than changing the engine.
+
+Decoded YUV, RGB, grayscale and float input is normalized by mpv/libavfilter before the VapourSynth bridge, preserving tagged primaries and transfer. Analysis always uses an 8-bit copy. Synthesis supports 8-bit 4:2:0/4:4:4 and 10/16-bit 4:2:0, so higher-depth RGB/4:2:2/4:4:4 loses chroma resolution. Odd coded dimensions use full-chroma bridge input; any internal chroma padding is cropped after interpolation. Input dimensions must stay fixed within a graph; mpv must reinitialize it after a size change. No HDR-to-SDR tone mapping is added. A target FPS does not guarantee sustainable speed; headless checks do not validate display/HDR presentation or audio sync.
+
+Ordinary mpv user configuration, scripts and filters remain enabled. The launcher creates temporary VapourSynth loader configuration without modifying permanent player settings. URLs, mpv protocols and `-` for stdin are passed to external mpv unchanged. The wrapper adds no network implementation, downloads or updates; mpv and user scripts retain their existing capabilities.
+
+The vector wire format stores `(X << 16) + Y`. Negative Y borrows from the high word, so the old decoder read `(-8,-4)` as `(-9,-4)`. The patch restores X in both readers and tests real signed-boundary roundtrips without changing the encoder, shaders, scene protections or GPU kernels.

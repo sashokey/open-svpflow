@@ -11,6 +11,7 @@ PAYLOAD = (
     "player/graph.vpy",
     "player/settings.json",
     "player/policy.py",
+    "player/compat.lua",
 )
 PLUGINS = ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib")
 
