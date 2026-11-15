@@ -1,0 +1,65 @@
+name: Prerelease
+
+on:
+  push:
+    branches: [main]
+    paths: [.github/release.json]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      draft: ${{ steps.release.outputs.draft }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - id: release
+        run: python3 scripts/release_metadata.py >> "$GITHUB_OUTPUT"
+
+  test-build:
+    needs: metadata
+    uses: ./.github/workflows/ci.yml
+    with:
+      version: ${{ needs.metadata.outputs.version }}
+
+  publish:
+    needs: [metadata, test-build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: open-svpflow-macos-arm64
+          path: dist
+      - name: Publish tested package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.metadata.outputs.version }}
+          DRAFT: ${{ needs.metadata.outputs.draft }}
+          PRERELEASE: ${{ needs.metadata.outputs.prerelease }}
+        run: |
+          python3 -c 'import json; from pathlib import Path; Path("release-notes.md").write_text(json.loads(Path(".github/release.json").read_text())["notes"], encoding="utf-8")'
+          flags=(--draft)
+          if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
+          gh release create "v$VERSION" dist/*.zip --target "$GITHUB_SHA" --title "v$VERSION" --notes-file release-notes.md "${flags[@]}"
+          if [ "$DRAFT" = false ]; then
+            gh release edit "v$VERSION" --draft=false --prerelease="$PRERELEASE"
+          fi
+

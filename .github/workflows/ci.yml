@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: [.github/release.json]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        default: 0.0.0-ci
+
+permissions:
+  contents: read
+
+jobs:
+  test-build:
+    runs-on: macos-26
+    timeout-minutes: 25
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      HOMEBREW_NO_INSTALL_CLEANUP: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.1 --profile minimal
+      - name: Test Python adapter and packaging
+        run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Test Rust workspace
+        run: cargo test --locked --workspace
+      - name: Install external playback dependencies
+        run: brew install mpv vapoursynth
+      - name: Build ARM64 plugins
+        run: |
+          test "$(uname -m)" = arm64
+          export RUSTFLAGS="--remap-path-prefix=$GITHUB_WORKSPACE=/open-svpflow --remap-path-prefix=$HOME/.cargo=/cargo"
+          cargo build --locked --release -p svpflow1 -p svpflow2
+          for library in target/release/libsvpflow1_vs.dylib target/release/libsvpflow2_vs.dylib; do
+            test "$(lipo -archs "$library")" = arm64
+            codesign --force --sign - "$library"
+            codesign --verify --strict "$library"
+          done
+      - name: Load and exercise native plugins in VapourSynth
+        run: |
+          vs_python="$(head -n 1 "$(command -v vspipe)")"
+          vs_python="${vs_python#\#!}"
+          "$vs_python" -B tests/smoke_plugins.py --plugin-dir target/release
+      - name: Package plugin distribution
+        env:
+          VERSION: ${{ inputs.version || '0.0.0-ci' }}
+        run: python3 -B scripts/package_release.py --version "$VERSION"
+      - name: Verify extracted archive with external mpv
+        run: |
+          python3 -m zipfile -e dist/*.zip "$RUNNER_TEMP/plugin-package"
+          python3 -B tests/smoke_mpv.py --package "$RUNNER_TEMP/plugin-package/open-svpflow"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: open-svpflow-macos-arm64
+          path: dist/*.zip
+          if-no-files-found: error
+          retention-days: 7
+
