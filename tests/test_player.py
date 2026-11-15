@@ -154,7 +154,7 @@ class SettingsTests(unittest.TestCase):
             ("scene_changes", "blend", "smooth", ("scene", "blend"), True),
             ("duplicate_frames_removal", True, "smooth", ("dedup",), 1),
         )
-        self.assertEqual({case[0] for case in cases}, set(p.DEFAULT_SETTINGS) - {"schema", "rate_mode", "output_bits", "backend", "gpu_device", "buffered_frames", "concurrent_frames", "native"})
+        self.assertEqual({case[0] for case in cases}, set(p.DEFAULT_SETTINGS) - {"schema", "rate_mode", "output_bits", "backend", "gpu_device", "buffered_frames", "concurrent_frames", "native", "dither"})
         for key, value, section, path, expected in cases:
             with self.subTest(setting=key):
                 settings = copy.deepcopy(p.DEFAULT_SETTINGS)
@@ -458,6 +458,15 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             p.validate_settings({"native": {"smooth": {"linear": float("nan")}}})
 
+    def test_dither_defaults_fast_and_preserves_explicit_quality_choice(self):
+        p = policy()
+        self.assertEqual(p.validate_settings({})["dither"], "ordered")
+        for name in ("none", "ordered", "random", "error_diffusion"):
+            self.assertEqual(p.validate_settings({"dither": name})["dither"], name)
+        for invalid in ("invalid", None, 1, [], {}):
+            with self.subTest(value=invalid), self.assertRaises(ValueError):
+                p.validate_settings({"dither": invalid})
+
 
 class LauncherTests(unittest.TestCase):
     def launcher(self):
@@ -501,7 +510,6 @@ class LauncherTests(unittest.TestCase):
             (scripts / "example.lua").write_text("return true\n")
             environment = {"HOME": str(root / "home"), "XDG_CONFIG_HOME": str(config.parent), "PATH": "/usr/bin"}
             child_root = root / "child-config"
-            child_root.mkdir()
             result = launch.runtime_environment(None, environment, child_root)
             child_mpv = Path(result["XDG_CONFIG_HOME"]) / "mpv"
             self.assertTrue(child_mpv.is_symlink())

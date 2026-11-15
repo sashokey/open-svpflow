@@ -1,6 +1,10 @@
 local mp = require "mp"
 local normal_graph
 
+if mp.get_property("options/autofit-larger", "") == "" then
+    mp.set_property("options/autofit-larger", "100%x100%")
+end
+
 local function configure(reset)
     local filters = mp.get_property_native("vf", {})
     local input
@@ -15,12 +19,15 @@ local function configure(reset)
     end
     if not input or not input.params or not input.params.graph then return end
     normal_graph = normal_graph or input.params.graph
-    local params = mp.get_property_native("video-dec-params")
+    local params = not reset and mp.get_property_native("video-dec-params")
     if not params then
+        local video = mp.get_property_number("vid")
         for _, track in ipairs(mp.get_property_native("track-list", {})) do
-            if track.type == "video" and track.selected then
+            if track.type == "video" and (not video or track.id == video) then
                 params = {w = track["demux-w"], h = track["demux-h"]}
-                break
+                if not params.w or not params.h or params.w <= 0 or params.h <= 0 or params.w % 2 ~= 0 or params.h % 2 ~= 0 then
+                    break
+                end
             end
         end
     end

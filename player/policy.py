@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
     "scene_changes": "nearest",
     "duplicate_frames_removal": False,
     "output_bits": 8,
+    "dither": "ordered",
     "backend": "gpu",
     "gpu_device": 0,
     "buffered_frames": "auto",
@@ -31,6 +32,7 @@ DEFAULT_SETTINGS = {
     "native": {"super": {}, "analyse": {}, "smooth": {}},
 }
 PLUGIN_NAMES = ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib")
+DITHER_TYPES = ("none", "ordered", "random", "error_diffusion")
 NATIVE_INT_MAX = 2147483647
 NATIVE_ALGORITHMS = (1, 2, 11, 13, 21, 22, 23, *range(90, 101))
 NATIVE_BLOCKS = ((4, 4), (8, 4), (8, 8), (16, 8), (16, 16), (32, 16), (32, 32))
@@ -82,6 +84,7 @@ def validate_settings(value):
     for item in value["search_radius"].values():
         bounded_int(item, -(NATIVE_INT_MAX // 256), NATIVE_INT_MAX // 256, "search radius")
     need(type(value["output_bits"]) is int and value["output_bits"] in (8, 10, 16) or value["output_bits"] == "source", "Unsupported output depth")
+    need(type(value["dither"]) is str and value["dither"] in DITHER_TYPES, "Unsupported dither method")
     need(value["backend"] in ("gpu", "cpu"), "Unsupported synthesis backend")
     bounded_int(value["gpu_device"], 0, NATIVE_INT_MAX, "GPU device")
     for key, maximum in (("buffered_frames", 9999), ("concurrent_frames", 99)):

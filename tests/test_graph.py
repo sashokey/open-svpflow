@@ -84,6 +84,19 @@ class GraphTests(unittest.TestCase):
         synthesis, _ = self.prepare(clip)
         self.assertEqual(synthesis.format.bits_per_sample, 8)
 
+    def test_all_dither_modes_keep_quantization_within_one_8_bit_step(self):
+        clip = self.source(vs.YUV420P10, color=[257, 512, 512], _Matrix=9, _Transfer=16, _Primaries=9, _ColorRange=1)
+        for name in ("none", "ordered", "random", "error_diffusion"):
+            with self.subTest(dither=name):
+                synthesis, analysis = self.prepare(clip, output_bits=8, dither=name)
+                self.assertEqual((synthesis.width, synthesis.height, synthesis.format.id), (320, 192, vs.YUV420P8))
+                with synthesis.get_frame(0) as frame:
+                    values = set(bytes(frame[0]))
+                    self.assertEqual(values, {64} if name == "none" else {64, 65})
+                    self.assertEqual(tuple(frame.props[key] for key in ("_Matrix", "_Transfer", "_Primaries", RANGE_KEY)), (9, 16, 9, RANGE_LIMITED))
+        with self.assertRaises(ValueError):
+            self.prepare(clip, dither="invalid")
+
     def test_legacy_mpv_bridge_full_range_is_scaled_correctly(self):
         clip = self.source(vs.YUV420P8, color=[100, 128, 128])
         clip = vs.core.std.SetFrameProps(clip, _ColorRange=0, _ColorSpace=1)

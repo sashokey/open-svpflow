@@ -43,7 +43,7 @@ def build_command(package, movie, refresh=None):
         "--mpv-option=--vo=null", "--mpv-option=--audio=no",
         "--mpv-option=--frames=12", "--mpv-option=--untimed",
         "--mpv-option=--terminal=yes",
-        "--mpv-option=--term-playing-msg=OSVP_SMOKE=${video-out-params/w}x${video-out-params/h};MATRIX=${video-out-params/colormatrix};RANGE=${video-out-params/colorlevels};PRIMARIES=${video-out-params/primaries};TRANSFER=${video-out-params/gamma};PAR=${video-out-params/par}",
+        "--mpv-option=--term-playing-msg=OSVP_SMOKE=${video-out-params/w}x${video-out-params/h};MATRIX=${video-out-params/colormatrix};RANGE=${video-out-params/colorlevels};PRIMARIES=${video-out-params/primaries};TRANSFER=${video-out-params/gamma};PAR=${video-out-params/par};FORMAT=${video-out-params/pixelformat};AUTOFIT=${options/autofit-larger}",
         "--", str(movie),
     ]
 
@@ -54,14 +54,18 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="open-svpflow-smoke-") as directory:
         movie = Path(directory) / "synthetic motion.y4m"
-        for refresh, chroma, aspect, width, height in ((None, "420jpeg", "1:1", 320, 192), (240, "420jpeg", "1:1", 320, 192), (240, "422", "1:1", 320, 192), (240, "420jpeg", "16:15", 320, 192), (240, "rgb", "1:1", 320, 192), (48, "420jpeg", "1:1", 319, 191), (48, "config", "1:1", 319, 191), (48, "full", "1:1", 320, 192)):
+        for refresh, chroma, aspect, width, height in ((None, "420jpeg", "1:1", 320, 192), (240, "420jpeg", "1:1", 320, 192), (240, "422", "1:1", 320, 192), (240, "420jpeg", "16:15", 320, 192), (240, "rgb", "1:1", 320, 192), (48, "420jpeg", "1:1", 319, 191), (48, "config", "1:1", 319, 191), (48, "full", "1:1", 320, 192), (48, "original", "1:1", 320, 192), (48, "window", "1:1", 320, 192)):
             if chroma == "rgb":
                 movie = Path(directory) / "tagged RGB.mkv"
                 write_tagged_rgb(movie)
             else:
-                write_video(movie, "420jpeg" if chroma in ("config", "full") else chroma, aspect, width + (chroma == "config"), height + (chroma == "config"), full_range=chroma == "full")
+                write_video(movie, "420jpeg" if chroma in ("config", "full", "original", "window") else chroma, aspect, width + (chroma == "config"), height + (chroma == "config"), full_range=chroma == "full")
             target = 48 if refresh is None else refresh
             command = build_command(args.package, movie, refresh)
+            if chroma == "original":
+                command[command.index("--profile") + 1] = "original"
+            if chroma == "window":
+                command[-2:-2] = ["--mpv-option=--autofit-larger=75%x65%"]
             if chroma in ("rgb", "full"):
                 command[-2:-2] = ["--mpv-option=--frames=2", "--mpv-option=--vf-add=lavfi=[signalstats,metadata=mode=print]", "--mpv-option=--msg-level=ffmpeg=v"]
             if chroma == "full":
@@ -71,7 +75,7 @@ def main():
                 xdg = Path(directory) / "user configuration"
                 scripts = xdg / "mpv" / "scripts"
                 scripts.mkdir(parents=True)
-                (xdg / "mpv" / "mpv.conf").write_text("volume=37\nvf=lavfi=[crop=319:191:0:0:exact=1]\n")
+                (xdg / "mpv" / "mpv.conf").write_text("volume=37\nautofit-larger=80%x70%\nvf=lavfi=[crop=319:191:0:0:exact=1]\n")
                 (scripts / "user.lua").write_text('mp.msg.info("OSVP_USER_SCRIPT=" .. mp.get_property("volume"))\n')
                 environment["XDG_CONFIG_HOME"] = str(xdg)
                 command.remove("--mpv-option=--no-config")
@@ -90,8 +94,14 @@ def main():
             print(output, flush=True)
             if chroma == "config" and "OSVP_USER_SCRIPT=37" not in output:
                 raise SystemExit("External mpv did not preserve user configuration and script loading")
-            if process.returncode != 0 or "OSVP_SMOKE=" + str(width) + "x" + str(height) not in output or "interpolation target " + str(target) + " FPS" not in output:
+            if process.returncode != 0 or "OSVP_SMOKE=" + str(width) + "x" + str(height) not in output or chroma != "original" and "interpolation target " + str(target) + " FPS" not in output:
                 raise SystemExit("External mpv interpolation smoke failed at " + str(target) + " FPS")
+            expected_format = "yuv420p16" if chroma == "full" else "yuv420p" if chroma in ("420jpeg", "original", "window") and width % 2 == height % 2 == 0 else "yuv444p"
+            if "FORMAT=" + expected_format + ";" not in output:
+                raise SystemExit("External mpv unexpectedly changed chroma format: expected " + expected_format)
+            expected_autofit = "80%x70%" if chroma == "config" else "75%x65%" if chroma == "window" else "100%x100%"
+            if "AUTOFIT=" + expected_autofit not in output:
+                raise SystemExit("External mpv window limit did not preserve the requested default or user override")
             if aspect == "16:15":
                 par = re.search(r"PAR=([0-9.]+)", output)
                 if par is None or abs(float(par.group(1)) - 16 / 15) > 0.0001:

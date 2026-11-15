@@ -39,7 +39,10 @@ class LaunchTests(unittest.TestCase):
         with patch.object(launch.shutil, "which", return_value="/external/mpv"), patch.object(launch, "runtime_environment") as environment, patch.object(launch.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
             self.assertEqual(launch.main(["--profile", "original", "--", "memory://fixture"]), 0)
         environment.assert_not_called()
-        self.assertEqual(run.call_args.args[0], ["/external/mpv", "--", "memory://fixture"])
+        command = run.call_args.args[0]
+        self.assertEqual(command[-2:], ["--", "memory://fixture"])
+        self.assertTrue(any(value.endswith("/player/compat.lua") for value in command if value.startswith("--script=")))
+        self.assertFalse(any(value.startswith("--vf") for value in command))
 
 
 if __name__ == "__main__":

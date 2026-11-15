@@ -23,8 +23,9 @@ def load_plugins(core, directory):
             core.std.LoadPlugin(path=str(path))
 
 
-def prepare_clip(clip, output_bits=8):
+def prepare_clip(clip, output_bits=8, dither=policy.DEFAULT_SETTINGS["dither"]):
     core = vs.core
+    policy.need(dither in policy.DITHER_TYPES, "Unsupported dither method")
     policy.need(clip.width > 0 and clip.height > 0, "The input must have fixed dimensions; reinitialize the filter after a size change")
     def bridge_metadata(n, f):
         properties = {}
@@ -61,7 +62,7 @@ def prepare_clip(clip, output_bits=8):
     @lru_cache(maxsize=16)
     def converted(matrix):
         intermediate = core.query_video_format(vs.YUV, vs.INTEGER, format.bits_per_sample, 0, 0).id if padded else format_id
-        options = {"width": width, "height": height, "format": intermediate, "dither_type": "error_diffusion"}
+        options = {"width": width, "height": height, "format": intermediate, "dither_type": dither}
         if matrix is not None:
             options.update(matrix=matrix, range_s="limited")
         result = core.resize.Spline36(clip, **options)
@@ -95,7 +96,7 @@ def interpolate(clip, settings, source, target, directory, gpu=None):
         clip = clip[:max_source]
     normalized = core.std.AssumeFPS(clip, fpsnum=source.numerator, fpsden=source.denominator)
     settings = policy.validate_settings(settings)
-    synthesis, analysis = prepare_clip(normalized, settings["output_bits"])
+    synthesis, analysis = prepare_clip(normalized, settings["output_bits"], settings["dither"])
     options = policy.engine_options(settings, source, target, synthesis.format.bits_per_sample, gpu=gpu)
     load_plugins(core, directory)
     super_result = core.svp1.Super(analysis, options["super"])

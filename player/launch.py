@@ -13,6 +13,7 @@ from policy import build_command, read_settings, validate_settings
 def runtime_environment(vsscript=None, environment=None, config_root=None):
     result = dict(os.environ if environment is None else environment)
     if config_root is not None:
+        Path(config_root).mkdir(parents=True, exist_ok=True)
         original = Path(result.get("XDG_CONFIG_HOME", ""))
         if not original.is_absolute():
             original = Path(result.get("HOME", str(Path.home()))) / ".config"
@@ -91,12 +92,12 @@ def main(arguments=None):
         if executable is None:
             raise ValueError("External mpv was not found; install it or pass --mpv")
         command[0] = executable
-        if options.profile == "original":
-            return subprocess.run(command, env=dict(os.environ)).returncode
         compatibility = root / "player" / "compat.lua"
         if not compatibility.is_file():
             raise ValueError("The player compatibility script is unavailable")
         command.insert(1, "--script=" + str(compatibility))
+        if options.profile == "original":
+            return subprocess.run(command, env=dict(os.environ)).returncode
         with tempfile.TemporaryDirectory(prefix="open-svpflow-vs-") as config_root:
             environment = runtime_environment(options.vsscript, config_root=config_root)
             return subprocess.run(command, env=environment).returncode
