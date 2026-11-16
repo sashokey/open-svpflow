@@ -25,7 +25,7 @@ def verify(app):
         command("/usr/bin/plutil", "-lint", "--", str(catalog))
     assert os.access(contents / "MacOS/OpenSVPflow", os.X_OK), "The extracted application executable lost its execute permission"
     assert not any(key.startswith("NS") and key.endswith("UsageDescription") for key in metadata)
-    for name in ("README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "OpenSVPflow.icns", "StatusIconTemplate.png", "player/application.py", "player/settings_api.py", "player/session.py", "player/launch.py", "player/dependencies.py", "player/compat.lua", "player/graph.vpy"):
+    for name in ("README.md", "assets/OpenSVPflow-screenshot.png", "LICENSE", "THIRD_PARTY_NOTICES.md", "OpenSVPflow.icns", "StatusIconTemplate.png", "player/application.py", "player/settings_api.py", "player/session.py", "player/launch.py", "player/dependencies.py", "player/compat.lua", "player/graph.vpy"):
         assert (contents / "Resources" / name).is_file(), name
     for relative in ("MacOS/OpenSVPflow", "Frameworks/libsvpflow1_vs.dylib", "Frameworks/libsvpflow2_vs.dylib"):
         path = contents / relative
