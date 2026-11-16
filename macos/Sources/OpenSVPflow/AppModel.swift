@@ -12,7 +12,7 @@ final class AppModel {
     var saving = false
     var needsHomebrew = false
     var needsDependencies = false
-    var setupMessage = "Checking playback components…"
+    var setupMessage = AppText("Checking playback components…")
     var errorMessage: String?
     var showError = false
     var showAsk = false
@@ -20,6 +20,9 @@ final class AppModel {
     var document: JSONValue = .object([:])
     var descriptors: [SettingDescriptor] = []
     var limitations: [String] = []
+    var settingsGroup = "Interpolation"
+    var revealTargetRate = false
+    private(set) var playbackStatus: PlaybackStatus?
     var presentation = PlaybackPresentation()
     var performEffect: ((PresentationEffect) -> Void)?
     var showMainWindow: (() -> Void)?
@@ -30,6 +33,8 @@ final class AppModel {
     private var revision = 0
     private var savedRevision = 0
     private var lastSessionError: String?
+    private var statusGeneration = 0
+    private var acceptedFixedFPS: JSONValue?
     let resources: URL
     let stateDirectory: URL
 
@@ -41,6 +46,12 @@ final class AppModel {
 
     var playbackActive: Bool { presentation.playbackActive }
     var hasUnsavedChanges: Bool { savedRevision != revision }
+    var playbackFields: [SettingDescriptor] {
+        let rate = document.value(at: "playback.rate")?.string
+        return descriptors.filter { field in
+            field.group == "Playback" && (field.path != "playback.fps" || rate == "fixed")
+        }
+    }
 
     func prepare() async {
         guard !checking else { return }
@@ -51,13 +62,13 @@ final class AppModel {
         guard !needsHomebrew else {
             phase = .setup
             needsDependencies = true
-            setupMessage = "Install Homebrew to prepare the external playback components."
+            setupMessage = AppText("Install Homebrew to prepare the external playback components.")
             return
         }
         guard let python = RuntimeDiscovery.python() else {
             phase = .setup
             needsDependencies = true
-            setupMessage = "Install the external playback components before opening a movie."
+            setupMessage = AppText("Install the external playback components before opening a movie.")
             return
         }
         let backend = BackendClient(python: python, resources: resources, stateDirectory: stateDirectory)
@@ -68,7 +79,7 @@ final class AppModel {
                 phase = .setup
                 needsHomebrew = check["needs_homebrew"]?.boolean ?? false
                 needsDependencies = check["needs_dependencies"]?.boolean ?? true
-                setupMessage = check["message"]?.string ?? "Some playback components need attention."
+                setupMessage = AppDiagnostic(check["message"]?.string ?? "Some playback components need attention.")
                 return
             }
             let description = try await backend.call("describe")
@@ -78,6 +89,7 @@ final class AppModel {
             let settings = try await backend.call("settings-get")
             guard let loaded = settings["document"] else { throw ProcessFailure.backend("The settings document is missing.") }
             document = loaded
+            acceptedFixedFPS = loaded.value(at: "playback.fps")
             revision = 0
             savedRevision = 0
             phase = .ready
@@ -91,7 +103,7 @@ final class AppModel {
         } catch {
             phase = .setup
             needsDependencies = false
-            setupMessage = error.localizedDescription
+            setupMessage = AppDiagnostic(error.localizedDescription)
         }
     }
 
@@ -103,7 +115,7 @@ final class AppModel {
             NSWorkspace.shared.open([script], withApplicationAt: URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"), configuration: configuration) { _, error in
                 if let error { Task { @MainActor in self.present(error.localizedDescription) } }
             }
-            setupMessage = "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages."
+            setupMessage = AppText("Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages.")
         } catch { present(error.localizedDescription) }
     }
 
@@ -122,25 +134,33 @@ final class AppModel {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = true
-        panel.prompt = "Open"
+        panel.prompt = AppText("Open")
         panel.begin { response in
             if response == .OK { self.enqueue(panel.urls) }
         }
     }
 
+    func openLanguageSettings() {
+        if let languagePane = URL(string: "x-apple.systempreferences:com.apple.Localization-Settings.extension"),
+           NSWorkspace.shared.open(languagePane) { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
+    }
+
     func edit(_ path: String, value: JSONValue) {
         do {
+            if acceptedFixedFPS == nil { acceptedFixedFPS = document.value(at: "playback.fps") }
             try document.set(value, at: path)
             revision += 1
             let previous = saveTask
             let snapshot = document
             let currentRevision = revision
+            let fixedFPSIsHidden = path != "playback.fps" && snapshot.value(at: "playback.rate") != .string("fixed")
             saving = true
             saveTask = Task {
                 _ = await previous?.value
                 try? await Task.sleep(for: .milliseconds(250))
                 guard currentRevision == self.revision else { return true }
-                return await self.persist(snapshot, revision: currentRevision)
+                return await self.persist(snapshot, revision: currentRevision, fixedFPSIsHidden: fixedFPSIsHidden)
             }
         } catch { present("This setting could not be changed.") }
     }
@@ -161,12 +181,25 @@ final class AppModel {
         return true
     }
 
-    private func persist(_ snapshot: JSONValue, revision currentRevision: Int) async -> Bool {
+    private func persist(_ snapshot: JSONValue, revision currentRevision: Int, fixedFPSIsHidden: Bool) async -> Bool {
         guard let client else { return false }
         do {
-            let result = try await client.call("settings-save", request: .object(["document": snapshot]))
+            let result: JSONValue
+            do {
+                result = try await client.call("settings-save", request: .object(["document": snapshot]))
+            } catch ProcessFailure.backend(let message) {
+                guard fixedFPSIsHidden,
+                      ["Invalid target frame rate", "Target frame rate exceeds native timing fields", "Fixed FPS must be a rational string"].contains(message),
+                      let acceptedFixedFPS,
+                      acceptedFixedFPS != snapshot.value(at: "playback.fps") else { throw ProcessFailure.backend(message) }
+                var repaired = snapshot
+                try repaired.set(acceptedFixedFPS, at: "playback.fps")
+                result = try await client.call("settings-save", request: .object(["document": repaired]))
+            }
+            let saved = result["document"]
+            if let fps = saved?.value(at: "playback.fps") { acceptedFixedFPS = fps }
             if currentRevision == revision {
-                if let saved = result["document"] { document = saved }
+                if let saved { document = saved }
                 savedRevision = currentRevision
                 saving = false
             }
@@ -195,6 +228,7 @@ final class AppModel {
             return
         }
         guard !files.isEmpty || action == "cancel" else { return }
+        statusGeneration &+= 1
         busy = true
         defer {
             busy = false
@@ -214,17 +248,28 @@ final class AppModel {
 
     func refreshStatus() async {
         guard let client, !busy else { return }
+        statusGeneration &+= 1
+        let generation = statusGeneration
         do {
             let result = try await client.call("status", timeout: 5)
+            guard generation == statusGeneration, !busy else { return }
             handle(result, userInitiated: false)
         } catch {
-            if phase == .ready { present(error.localizedDescription) }
+            if generation == statusGeneration, !busy, phase == .ready { present(error.localizedDescription) }
         }
     }
 
     private func handle(_ result: JSONValue, userInitiated: Bool, fallbackFiles: [String] = []) {
         let status = result["status"]?.string ?? "idle"
+        if let reported = result["playback"].flatMap(PlaybackStatus.init) {
+            playbackStatus = reported
+        } else if status != "ask" && status != "queued" {
+            playbackStatus = nil
+        }
         if status == "ask" {
+            if playbackStatus != nil {
+                _ = presentation.handle(status: "started", afterStart: "keep_open", userInitiated: false)
+            }
             if !showAsk {
                 pendingAsk = result["files"]?.array.compactMap(\.string) ?? fallbackFiles
                 if !pendingAsk.isEmpty {
@@ -265,7 +310,7 @@ final class AppModel {
     }
 
     func present(_ message: String) {
-        errorMessage = message
+        errorMessage = AppDiagnostic(message)
         showError = true
         showMainWindow?()
     }

@@ -42,7 +42,7 @@ jobs:
           brew install mpv vapoursynth imagemagick
       - name: Test native application logic
         timeout-minutes: 5
-        run: xcrun swift test --package-path macos --scratch-path .build/swift-tests --disable-sandbox
+        run: xcrun swift test --package-path macos --scratch-path .build/swift-tests --disable-sandbox --enable-swift-testing --disable-xctest --no-parallel
       - name: Build ARM64 plugins
         run: |
           test "$(uname -m)" = arm64

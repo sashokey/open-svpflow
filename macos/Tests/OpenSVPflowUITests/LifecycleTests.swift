@@ -37,6 +37,20 @@ import Testing
     #expect(saved["document"]?.value(at: "preferences.after_start") == .string("keep_open"))
 }
 
+@Test @MainActor func leavingFixedRateKeepsLastAcceptedFPSWhenTheDraftIsInvalid() async throws {
+    let fixture = try await SettingsFixture()
+    defer { fixture.remove() }
+    fixture.model.edit("playback.rate", value: .string("fixed"))
+    fixture.model.edit("playback.fps", value: .string("144"))
+    #expect(await fixture.model.flushSettings())
+    fixture.model.edit("playback.fps", value: .string(""))
+    fixture.model.edit("playback.rate", value: .string("monitor_half"))
+    #expect(await fixture.model.flushSettings())
+    let saved = try await fixture.client.call("settings-get")
+    #expect(saved["document"]?.value(at: "playback.rate") == .string("monitor_half"))
+    #expect(saved["document"]?.value(at: "playback.fps") == .string("144"))
+}
+
 @MainActor private struct SettingsFixture {
     let client: BackendClient
     let model: AppModel

@@ -22,6 +22,7 @@ PAYLOAD = (
     "player/install-dependencies.command",
 )
 PLUGINS = ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib")
+LOCALIZATIONS = ("en", "zh-Hans", "hi", "es", "ar", "fr", "bn", "pt-PT", "id", "ur", "ru", "de", "ja")
 APP_NAME = "Open SVPflow.app"
 
 
@@ -35,6 +36,11 @@ def assemble_bundle(source, library, executable, icons, output, version):
     files = [(Path(source) / name, "Resources/" + name) for name in PAYLOAD]
     files += [(Path(library) / name, "Frameworks/" + name) for name in PLUGINS]
     files += [(Path(icons) / name, "Resources/" + name) for name in ("OpenSVPflow.icns", "StatusIconTemplate.png")]
+    for locale in LOCALIZATIONS:
+        directory = Path(source) / "macos/Localizations" / (locale + ".lproj")
+        if directory.is_symlink():
+            raise ValueError("Symlinked localization input: " + locale)
+        files.append((directory / "Localizable.strings", "Resources/" + directory.name + "/Localizable.strings"))
     files += [(Path(executable), "MacOS/OpenSVPflow")]
     for path, name in files:
         if path.is_symlink():
@@ -52,6 +58,7 @@ def assemble_bundle(source, library, executable, icons, output, version):
     numeric = version.split("-", 1)[0]
     metadata = {
         "CFBundleDevelopmentRegion": "en",
+        "CFBundleLocalizations": list(LOCALIZATIONS),
         "CFBundleDisplayName": "Open SVPflow",
         "CFBundleName": "Open SVPflow",
         "CFBundleIdentifier": "org.opensvpflow.mac",

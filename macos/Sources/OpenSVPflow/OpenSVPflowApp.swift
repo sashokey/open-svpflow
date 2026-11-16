@@ -5,17 +5,23 @@ import OpenSVPflowCore
 @main
 struct OpenSVPflowApp: App {
     @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
+    private var appLayoutDirection: LayoutDirection {
+        let language = Bundle.main.preferredLocalizations.first ?? Locale.current.identifier
+        return Locale.Language(identifier: language).characterDirection == .rightToLeft ? .rightToLeft : .leftToRight
+    }
 
     var body: some Scene {
         Window("Open SVPflow", id: "main") {
             MainView(model: delegate.model)
+                .environment(\.locale, Locale.current)
+                .environment(\.layoutDirection, appLayoutDirection)
                 .onAppear { delegate.connectWindow() }
         }
         .defaultSize(width: 520, height: 430)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Open File…") { delegate.model.openPanel() }
+                Button(AppText("Open File…")) { delegate.model.openPanel() }
                     .keyboardShortcut("o")
                     .disabled(delegate.model.phase != .ready)
             }
@@ -23,14 +29,16 @@ struct OpenSVPflowApp: App {
 
         Settings {
             SettingsView(model: delegate.model)
+                .environment(\.locale, Locale.current)
+                .environment(\.layoutDirection, appLayoutDirection)
         }
 
         MenuBarExtra(isInserted: Binding(get: { delegate.model.menuBarInserted }, set: { delegate.model.menuBarInserted = $0 })) {
-            Button("Show Window") { delegate.showMain() }
-            Button("Open File…") { delegate.model.openPanel() }
-            SettingsLink { Text("Settings…") }
+            Button(AppText("Show Window")) { delegate.showMain() }
+            Button(AppText("Open File…")) { delegate.model.openPanel() }
+            SettingsLink { Text(AppText("Settings…")) }
             Divider()
-            Button("Quit") { NSApplication.shared.terminate(nil) }
+            Button(AppText("Quit")) { NSApplication.shared.terminate(nil) }
                 .keyboardShortcut("q")
         } label: {
             Group {

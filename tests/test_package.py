@@ -1,7 +1,10 @@
 import importlib.util
+import json
 import plistlib
 import os
 from pathlib import Path
+import re
+import sys
 import tempfile
 import subprocess
 import unittest
@@ -15,6 +18,38 @@ spec.loader.exec_module(module)
 
 
 class PackageTests(unittest.TestCase):
+    @unittest.skipUnless(Path("/usr/bin/plutil").is_file(), "macOS strings parser")
+    def test_bundled_translations_match_settings_and_keep_format_arguments(self):
+        sys.path.insert(0, str(root / "player"))
+        try:
+            from settings_api import describe_settings
+        finally:
+            sys.path.pop(0)
+        description = describe_settings()
+        labels = set(description["limitations"])
+        for field in description["fields"]:
+            labels.add(field["label"])
+            labels.update(option["label"] for option in field.get("options", []))
+            if field.get("help"):
+                labels.add(field["help"])
+        for path in (root / "macos/Sources/OpenSVPflow").glob("*.swift"):
+            labels.update(re.findall(r'AppText\("([^"\\]+)"\)', path.read_text(encoding="utf-8")))
+        expected = None
+        for locale in module.LOCALIZATIONS:
+            with self.subTest(locale=locale):
+                catalog = root / "macos/Localizations" / (locale + ".lproj") / "Localizable.strings"
+                data = subprocess.check_output(["/usr/bin/plutil", "-convert", "json", "-o", "-", "--", str(catalog)], timeout=10)
+                strings = json.loads(data)
+                self.assertFalse(labels - strings.keys(), labels - strings.keys())
+                if expected is None:
+                    expected = set(strings)
+                self.assertEqual(set(strings), expected)
+                self.assertTrue(all(value.strip() for value in strings.values()))
+                for key, value in strings.items():
+                    self.assertEqual(key.count("%@"), value.count("%@"), key)
+                if locale != "en":
+                    self.assertNotEqual(strings["Playback"], "Playback")
+
     def test_distribution_contains_one_app_with_external_runtime_dependencies(self):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source"
@@ -23,6 +58,11 @@ class PackageTests(unittest.TestCase):
                 path = source / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(name)
+            localizations = {"en", "zh-Hans", "hi", "es", "ar", "fr", "bn", "pt-PT", "id", "ur", "ru", "de", "ja"}
+            for locale in localizations:
+                catalog = source / "macos/Localizations" / (locale + ".lproj") / "Localizable.strings"
+                catalog.parent.mkdir(parents=True)
+                catalog.write_text('"Playback" = "' + locale + '";\n')
             libraries = Path(directory) / "libraries"
             libraries.mkdir()
             for name in module.PLUGINS:
@@ -50,6 +90,10 @@ class PackageTests(unittest.TestCase):
                 metadata = plistlib.loads(archive.read(prefix + "Info.plist"))
                 self.assertEqual(metadata["CFBundleExecutable"], "OpenSVPflow")
                 self.assertEqual(metadata["LSMinimumSystemVersion"], "26.0")
+                self.assertEqual(set(metadata.get("CFBundleLocalizations", [])), localizations)
+                for locale in localizations:
+                    name = "Resources/" + locale + ".lproj/Localizable.strings"
+                    self.assertEqual(archive.read(prefix + name), ('"Playback" = "' + locale + '";\n').encode())
 
     def test_invalid_version_fails_before_output_creation(self):
         with tempfile.TemporaryDirectory() as directory:

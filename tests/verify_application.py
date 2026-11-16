@@ -19,6 +19,10 @@ def verify(app):
     metadata = plistlib.loads((contents / "Info.plist").read_bytes())
     assert metadata["LSMinimumSystemVersion"] == "26.0"
     assert metadata["CFBundleExecutable"] == "OpenSVPflow"
+    assert set(metadata["CFBundleLocalizations"]) == {"en", "zh-Hans", "hi", "es", "ar", "fr", "bn", "pt-PT", "id", "ur", "ru", "de", "ja"}
+    for locale in metadata["CFBundleLocalizations"]:
+        catalog = contents / "Resources" / (locale + ".lproj") / "Localizable.strings"
+        command("/usr/bin/plutil", "-lint", "--", str(catalog))
     assert os.access(contents / "MacOS/OpenSVPflow", os.X_OK), "The extracted application executable lost its execute permission"
     assert not any(key.startswith("NS") and key.endswith("UsageDescription") for key in metadata)
     for name in ("README.md", "LICENSE", "THIRD_PARTY_NOTICES.md", "OpenSVPflow.icns", "StatusIconTemplate.png", "player/application.py", "player/settings_api.py", "player/session.py", "player/launch.py", "player/dependencies.py", "player/compat.lua", "player/graph.vpy"):
@@ -37,7 +41,7 @@ def verify(app):
     for path in app.rglob("*"):
         assert not path.is_symlink(), path
         assert path.name not in ("mpv", "python", "python3", "libvsscript.dylib", "__pycache__", ".DS_Store"), path
-        if path.suffix in (".py", ".vpy", ".lua", ".json", ".md", ".command"):
+        if path.suffix in (".py", ".vpy", ".lua", ".json", ".md", ".command", ".strings"):
             assert b"/Users/" not in path.read_bytes(), "Private user path in " + str(path.relative_to(app))
     print("PASS: ARM64 application, ad-hoc component signatures, no entitlements or bundled external runtimes, required resources and private-path scan")
 
