@@ -55,22 +55,22 @@ struct PlaybackStatusView: View {
     @Environment(\.locale) private var locale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 22) {
             HStack(alignment: .center, spacing: 14) {
                 Image(systemName: "film")
-                    .font(.title2)
+                    .font(.system(size: 22, weight: .light))
                     .foregroundStyle(.tint)
-                    .padding(12)
+                    .frame(width: 46, height: 46)
                     .background(.tint.opacity(0.12), in: .rect(cornerRadius: 12))
                     .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     if let status {
                         Text(AppText(status.paused ? "Paused" : "Playing"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Text(status?.title ?? AppText("Now Playing"))
-                        .font(.title2.weight(.semibold))
+                        .font(.system(size: 21, weight: .semibold))
                         .lineLimit(2)
                         .accessibilityAddTraits(.isHeader)
                     let summary = interpolationSummary
@@ -79,6 +79,7 @@ struct PlaybackStatusView: View {
                     }
                 }
             }
+            .padding(.top, 5)
             healthPanel
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -92,18 +93,22 @@ struct PlaybackStatusView: View {
     }
 
     private var healthPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if let status, !status.paused {
-                HStack(alignment: .top, spacing: 9) {
-                    Image(systemName: qualityIcon(status.quality))
-                        .foregroundStyle(qualityColor(status.quality))
+        VStack(alignment: .leading, spacing: 12) {
+            if let status {
+                HStack(alignment: .top, spacing: 10) {
+                    Circle()
+                        .fill(status.paused ? Color.secondary : qualityColor(status.quality))
+                        .frame(width: 9, height: 9)
+                        .padding(.top, 5)
                         .accessibilityHidden(true)
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(qualityTitle(status.quality)).font(.headline)
-                        Text(qualityMessage(status.quality)).foregroundStyle(.secondary)
+                        Text(status.paused ? AppText("Paused") : qualityTitle(status.quality))
+                            .font(.system(size: 15, weight: .semibold))
+                        Text(status.paused ? AppText("Quality monitoring resumes with playback.") : qualityMessage(status.quality))
+                            .foregroundStyle(.secondary)
                     }
                 }
-                if status.hasMetrics {
+                if !status.paused && status.hasMetrics {
                     DisclosureGroup(AppText("Details")) {
                         VStack(alignment: .leading, spacing: 5) {
                             if let count = status.outputDrops {
@@ -127,23 +132,36 @@ struct PlaybackStatusView: View {
                         .padding(.top, 6)
                     }
                 }
-                if status.quality == .attention {
+                if !status.paused && status.quality == .attention {
                     Divider()
-                    Text(AppText(status.displayLimited
+                    let advice = AppText(status.displayLimited
                         ? "The video frame rate exceeds the display refresh rate. Try a lower target frame rate."
-                        : "Try a lower target frame rate or lighter interpolation settings."))
-                    Button(AppText("Adjust Settings…"), action: adjust)
+                        : "Try a lower target frame rate or lighter interpolation settings.")
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 10) {
+                            Text(advice)
+                            Spacer(minLength: 0)
+                            Button(AppText("Adjust Settings…"), action: adjust).fixedSize()
+                        }
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(advice)
+                            Button(AppText("Adjust Settings…"), action: adjust)
+                        }
+                    }
                 }
             } else {
-                Text(AppText(status?.paused == true
-                    ? "Quality monitoring resumes with playback."
-                    : "Playback details are unavailable."))
+                Text(AppText("Playback details are unavailable."))
                     .foregroundStyle(.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(15)
-        .background(Color.secondary.opacity(0.08), in: .rect(cornerRadius: 12))
+        .padding(16)
+        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 12))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.primary.opacity(0.12))
+                .allowsHitTesting(false)
+        }
     }
 
     private func qualityTitle(_ quality: PlaybackStatus.Quality) -> String {
@@ -164,14 +182,6 @@ struct PlaybackStatusView: View {
         case .attention: "Repeated playback issues detected."
         }
         return AppText(key)
-    }
-
-    private func qualityIcon(_ quality: PlaybackStatus.Quality) -> String {
-        switch quality {
-        case .checking: "ellipsis.circle"
-        case .excellent, .good: "checkmark.circle.fill"
-        case .attention: "exclamationmark.circle.fill"
-        }
     }
 
     private func qualityColor(_ quality: PlaybackStatus.Quality) -> Color {
