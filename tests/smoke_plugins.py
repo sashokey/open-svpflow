@@ -83,7 +83,7 @@ def main():
     with odd_output.get_frame(1) as frame:
         assert (frame.width, frame.height) == (319, 191)
     print("PASS: odd RGB48 dimensions restored after internal chroma alignment")
-    payload = graph["policy"].encode_payload({"schema": 1, "plugins": str(options.plugin_dir.resolve()), "settings": graph["policy"].DEFAULT_SETTINGS, "profile": "smooth", "fps": "auto"})
+    payload = graph["policy"].encode_payload({"schema": 1, "plugins": str(options.plugin_dir.resolve()), "settings": graph["policy"].DEFAULT_SETTINGS, "fps": "auto"})
     runpy.run_path(str(root / "player" / "graph.vpy"), init_globals={"video_in": source, "container_fps": 24, "display_fps": 48, "display_res": [160, 90], "video_in_dw": 320, "video_in_dh": 192, "user_data": payload})
     registered = vs.get_output(0)
     unchanged = registered.clip if hasattr(registered, "clip") else registered

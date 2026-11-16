@@ -35,7 +35,6 @@ def write_tagged_rgb(path):
 def build_command(package, movie, refresh=None):
     command = [
         sys.executable, str(package / "player" / "launch.py"),
-        "--profile", "smooth",
     ]
     command.extend(["--fps", "48"] if refresh is None else ["--mpv-option=--vo-null-fps=" + str(refresh)])
     return command + [
@@ -54,18 +53,20 @@ def main():
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix="open-svpflow-smoke-") as directory:
         movie = Path(directory) / "synthetic motion.y4m"
-        for refresh, chroma, aspect, width, height in ((None, "420jpeg", "1:1", 320, 192), (240, "420jpeg", "1:1", 320, 192), (240, "422", "1:1", 320, 192), (240, "420jpeg", "16:15", 320, 192), (240, "rgb", "1:1", 320, 192), (48, "420jpeg", "1:1", 319, 191), (48, "config", "1:1", 319, 191), (48, "full", "1:1", 320, 192), (48, "original", "1:1", 320, 192), (48, "window", "1:1", 320, 192)):
+        remove_filter = Path(directory) / "remove-filter.lua"
+        remove_filter.write_text('local mp = require "mp"\nmp.register_event("playback-restart", function()\n    mp.add_timeout(0.05, function() mp.commandv("vf", "remove", "@svp-interpolate") end)\nend)\n')
+        for refresh, chroma, aspect, width, height in ((None, "420jpeg", "1:1", 320, 192), (240, "420jpeg", "1:1", 320, 192), (240, "422", "1:1", 320, 192), (240, "420jpeg", "16:15", 320, 192), (240, "rgb", "1:1", 320, 192), (48, "420jpeg", "1:1", 319, 191), (48, "config", "1:1", 319, 191), (48, "full", "1:1", 320, 192), (48, "window", "1:1", 320, 192), (0, "420jpeg", "1:1", 320, 192), (24, "420jpeg", "1:1", 320, 192), (48, "filter-loss", "1:1", 320, 192)):
             if chroma == "rgb":
                 movie = Path(directory) / "tagged RGB.mkv"
                 write_tagged_rgb(movie)
             else:
-                write_video(movie, "420jpeg" if chroma in ("config", "full", "original", "window") else chroma, aspect, width + (chroma == "config"), height + (chroma == "config"), full_range=chroma == "full")
+                write_video(movie, "420jpeg" if chroma in ("config", "full", "window", "filter-loss") else chroma, aspect, width + (chroma == "config"), height + (chroma == "config"), full_range=chroma == "full")
             target = 48 if refresh is None else refresh
             command = build_command(args.package, movie, refresh)
-            if chroma == "original":
-                command[command.index("--profile") + 1] = "original"
             if chroma == "window":
                 command[-2:-2] = ["--mpv-option=--autofit-larger=75%x65%"]
+            if chroma == "filter-loss":
+                command[-2:-2] = ["--mpv-option=--untimed=no", f"--mpv-option=--script={remove_filter}"]
             if chroma in ("rgb", "full"):
                 command[-2:-2] = ["--mpv-option=--frames=2", "--mpv-option=--vf-add=lavfi=[signalstats,metadata=mode=print]", "--mpv-option=--msg-level=ffmpeg=v"]
             if chroma == "full":
@@ -82,7 +83,7 @@ def main():
                 command.remove("--mpv-option=--load-scripts=no")
             process = subprocess.Popen(command, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
             try:
-                output, _ = process.communicate(timeout=90)
+                output, _ = process.communicate(timeout=10 if chroma == "filter-loss" else 90)
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -92,11 +93,21 @@ def main():
                 print(output)
                 raise SystemExit("External mpv interpolation smoke timed out")
             print(output, flush=True)
+            if chroma == "filter-loss":
+                if process.returncode != 2 or "Open SVPflow: The interpolation filter failed or was disabled" not in output:
+                    raise SystemExit("External mpv did not stop after the interpolation filter was removed")
+                continue
+            if refresh in (0, 24):
+                reason = ("Display refresh rate is unavailable." if refresh == 0 else
+                          "The target frame rate must be higher than the video's frame rate.")
+                if process.returncode != 2 or "Open SVPflow: " + reason not in output or "interpolation target" in output:
+                    raise SystemExit("External mpv did not stop with the expected interpolation error")
+                continue
             if chroma == "config" and "OSVP_USER_SCRIPT=37" not in output:
                 raise SystemExit("External mpv did not preserve user configuration and script loading")
-            if process.returncode != 0 or "OSVP_SMOKE=" + str(width) + "x" + str(height) not in output or chroma != "original" and "interpolation target " + str(target) + " FPS" not in output:
+            if process.returncode != 0 or "OSVP_SMOKE=" + str(width) + "x" + str(height) not in output or "interpolation target " + str(target) + " FPS" not in output:
                 raise SystemExit("External mpv interpolation smoke failed at " + str(target) + " FPS")
-            expected_format = "yuv420p16" if chroma == "full" else "yuv420p" if chroma in ("420jpeg", "original", "window") and width % 2 == height % 2 == 0 else "yuv444p"
+            expected_format = "yuv420p16" if chroma == "full" else "yuv420p" if chroma in ("420jpeg", "window") and width % 2 == height % 2 == 0 else "yuv444p"
             if "FORMAT=" + expected_format + ";" not in output:
                 raise SystemExit("External mpv unexpectedly changed chroma format: expected " + expected_format)
             expected_autofit = "80%x70%" if chroma == "config" else "75%x65%" if chroma == "window" else "100%x100%"

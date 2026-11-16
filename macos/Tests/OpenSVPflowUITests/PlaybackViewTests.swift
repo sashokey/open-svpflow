@@ -4,7 +4,7 @@ import Testing
 
 @Test @MainActor func fixedFrameRateIsEditableOnlyWhenFixedIsSelected() throws {
     let model = AppModel()
-    model.descriptors = try ["playback.profile", "playback.rate", "playback.fps"].map { path in
+    model.descriptors = try ["playback.rate", "playback.fps"].map { path in
         try SettingDescriptor(.object([
             "path": .string(path),
             "label": .string(path),
@@ -13,10 +13,10 @@ import Testing
         ]))
     }
     for (rate, paths) in [
-        ("monitor", ["playback.profile", "playback.rate"]),
-        ("source_2", ["playback.profile", "playback.rate"]),
-        ("fixed", ["playback.profile", "playback.rate", "playback.fps"]),
-        ("monitor_half", ["playback.profile", "playback.rate"])
+        ("monitor", ["playback.rate"]),
+        ("source_2", ["playback.rate"]),
+        ("fixed", ["playback.rate", "playback.fps"]),
+        ("monitor_half", ["playback.rate"])
     ] {
         try model.document.set(.string(rate), at: "playback.rate")
         #expect(model.playbackFields.map(\.path) == paths)

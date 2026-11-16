@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Terminal-এ ইনস্টলেশন শেষ করুন, তারপর এখানে ফিরে আবার পরীক্ষা করুন। Homebrew প্রয়োজনীয় সংশ্লিষ্ট প্যাকেজগুলি আপডেট করতে পারে।";
 "Conversion dithering" = "কনভার্শনের ডিথারিং";
 "Custom (%@)" = "কাস্টম (%@)";
+"Custom" = "কাস্টম";
 "Decoder Drops" = "ডিকোডিংয়ে বাদ পড়া ফ্রেম";
 "Decrease grid step" = "গ্রিডের ধাপ ছোট করুন";
+"Default" = "ডিফল্ট";
 "Details" = "বিস্তারিত";
 "Disabled" = "বন্ধ";
 "Display Delays" = "দেখানোর সময় বিলম্ব";
+"Display refresh rate is unavailable." = "ডিসপ্লের রিফ্রেশ রেট জানা যায়নি।";
 "Drop Movies Here" = "সিনেমাগুলি এখানে টেনে আনুন";
 "Duplicate frames removal" = "একই ফ্রেম বারবার এলে তা সরানো";
 "Error Diffusion" = "এরর ডিফিউশন";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "সামঞ্জস্যপূর্ণ Python রানটাইমসহ mpv ও VapourSynth ইনস্টল করুন।";
 "Install the external playback components before opening a movie." = "সিনেমা খোলার আগে বাহ্যিক প্লেব্যাক কম্পোনেন্টগুলি ইনস্টল করুন।";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "ইনস্টলেশনের জন্য ইন্টারনেট দরকার। এতে প্রয়োজনীয় সংশ্লিষ্ট Homebrew প্যাকেজ আপডেট হতে পারে। সিস্টেমের পাসওয়ার্ড প্রয়োজন হলে Terminal-এ চাওয়া হবে।";
-"Interpolate when possible" = "সম্ভব হলে ইন্টারপোলেশন করুন";
 "Interpolation" = "ইন্টারপোলেশন";
 "Interpolation On" = "ইন্টারপোলেশন চালু";
 "Keep Window Open" = "উইন্ডো খোলা রাখুন";
@@ -122,8 +124,6 @@
 "Open File…" = "ফাইল খুলুন…";
 "Opening Movie…" = "সিনেমা খোলা হচ্ছে…";
 "Ordered" = "ক্রমবদ্ধ";
-"Original" = "মূল";
-"Original Playback" = "মূল ফ্রেম রেটে চলছে";
 "Output Drops" = "আউটপুটে বাদ পড়া ফ্রেম";
 "Paused" = "বিরতিতে";
 "Pixel" = "পিক্সেল";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "প্লেব্যাক চালিয়ে যাওয়া যায়নি।";
 "Playback dependencies are unavailable" = "প্লেব্যাকের জন্য প্রয়োজনীয় সফটওয়্যার পাওয়া যাচ্ছে না";
 "Playback details are unavailable." = "প্লেব্যাকের বিস্তারিত পাওয়া যাচ্ছে না।";
-"Playback mode" = "প্লেব্যাক মোড";
 "Playing" = "চলছে";
 "Preparing Playback" = "প্লেব্যাকের প্রস্তুতি চলছে";
 "Preserve source depth" = "উৎসের বিট ডেপথ রাখুন";
+"Preset" = "প্রিসেট";
 "Processing of scene changes" = "দৃশ্য বদলের প্রক্রিয়াকরণ";
 "Processing threads" = "প্রসেসিং থ্রেড";
 "Quality monitoring resumes with playback." = "প্লেব্যাক আবার শুরু হলে মান পর্যবেক্ষণও শুরু হবে।";
@@ -148,7 +148,6 @@
 "Repeat frame" = "ফ্রেম আবার দেখান";
 "Repeated playback issues detected." = "প্লেব্যাকে বারবার সমস্যা ধরা পড়েছে।";
 "Replace Playlist" = "প্লেলিস্ট বদলান";
-"Require interpolation" = "ইন্টারপোলেশন আবশ্যক";
 "Retry" = "আবার চেষ্টা করুন";
 "SVP shader" = "SVP শেডার";
 "Saving…" = "সেভ করা হচ্ছে…";
@@ -167,6 +166,7 @@
 "Small" = "ছোট";
 "Small and fast" = "ছোট ও দ্রুত";
 "Smooth playback with your installed mpv." = "ইনস্টল করা mpv দিয়ে মসৃণ প্লেব্যাক।";
+"Smooth" = "মসৃণ";
 "Some playback components need attention." = "কিছু প্লেব্যাক কম্পোনেন্ট পরীক্ষা করা প্রয়োজন।";
 "Source ×2" = "উৎস ×2";
 "Source ×2.5" = "উৎস ×2.5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "অ্যাপের সঙ্গে দেওয়া ইনস্টলেশন নির্দেশাবলি পাওয়া যাচ্ছে না। সম্পূর্ণ অ্যাপ প্যাকেজটি ডাউনলোড করুন।";
 "The external mpv executable is unavailable" = "বাহ্যিক mpv এক্সিকিউটেবল পাওয়া যাচ্ছে না";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "নির্দিষ্ট ফিল্ম প্রিসেটটি এই অ্যাপের নিজস্ব প্রিসেট। এটি SVP Manager-এর সার্বজনীন ফ্যাক্টরি বা Automatic প্রোফাইল থেকে উদ্ধার করা হয়নি। প্যারামিটারগুলি SVPflow API-এর ডকুমেন্টেশন ও জেনারেটরের পর্যবেক্ষণ করা আচরণ অনুযায়ী মেলানো হয়েছে।";
+"The interpolation filter could not process this video." = "ইন্টারপোলেশন ফিল্টারটি এই ভিডিও প্রক্রিয়া করতে পারেনি।";
 "The interpolation filter failed or was disabled" = "ইন্টারপোলেশন ফিল্টার কাজ করেনি বা বন্ধ করা হয়েছে";
 "The matching VSScript library is unavailable." = "সামঞ্জস্যপূর্ণ VSScript লাইব্রেরি পাওয়া যাচ্ছে না।";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "সামঞ্জস্যপূর্ণ নেটিভ VapourSynth API 4 এনভায়রনমেন্টে দুটি প্লাগইনই লোড করা যায়নি।";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "প্লেব্যাক সেশন শেষ হয়েছে";
 "The playback session is busy; try again shortly" = "প্লেব্যাক সেশন ব্যস্ত। একটু পরে আবার চেষ্টা করুন";
 "The selected source did not produce a video frame" = "বাছাই করা উৎস থেকে কোনো ভিডিও ফ্রেম পাওয়া যায়নি";
+"The selected source did not produce an interpolated video frame." = "নির্বাচিত উৎস থেকে ইন্টারপোলেট করা কোনো ভিডিও ফ্রেম পাওয়া যায়নি।";
 "The settings could not be saved." = "সেটিংস সেভ করা যায়নি।";
 "The settings description is missing." = "সেটিংসের বিবরণ পাওয়া যাচ্ছে না।";
 "The settings document is missing." = "সেটিংসের ডকুমেন্ট পাওয়া যাচ্ছে না।";
+"The target frame rate exceeds native timing limits." = "লক্ষ্য ফ্রেম রেট ইন্টারপোলেশনের সময়সীমা অতিক্রম করেছে।";
+"The target frame rate must be higher than the video's frame rate." = "লক্ষ্য ফ্রেম রেট ভিডিওর ফ্রেম রেটের চেয়ে বেশি হতে হবে।";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "ভিডিওর ফ্রেম রেট ডিসপ্লের রিফ্রেশ রেটের চেয়ে বেশি। কম লক্ষ্য ফ্রেম রেট দিয়ে চেষ্টা করুন।";
+"The video reports an invalid or unsupported frame rate." = "ভিডিওর ফ্রেম রেট অবৈধ বা সমর্থিত নয়।";
 "This setting could not be changed." = "এই সেটিংটি বদলানো যায়নি।";
 "Try a lower target frame rate or lighter interpolation settings." = "লক্ষ্য ফ্রেম রেট কমিয়ে দেখুন বা কম সংস্থান লাগে এমন ইন্টারপোলেশন সেটিংস ব্যবহার করুন।";
 "Unable to Continue" = "চালিয়ে যাওয়া যাচ্ছে না";
+"Unable to Interpolate" = "ইন্টারপোলেশন করা যায়নি";
 "Unable to Save Settings" = "সেটিংস সেভ করা যাচ্ছে না";
 "Unable to start the playback session; see session.log" = "প্লেব্যাক সেশন শুরু করা যায়নি। session.log দেখুন";
 "Unable to verify the external playback components." = "বাহ্যিক প্লেব্যাক কম্পোনেন্টগুলি যাচাই করা যায়নি।";

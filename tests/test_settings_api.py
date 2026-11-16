@@ -39,6 +39,24 @@ class SettingsApiTests(unittest.TestCase):
             self.assertEqual(saved["preferences"]["after_start"], "menu_bar")
             self.assertEqual(list(path.parent.iterdir()), [path])
 
+    def test_saved_playback_profiles_are_discarded_without_resetting_other_values(self):
+        module = api()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            for profile in ("auto", "smooth", "original"):
+                with self.subTest(profile=profile):
+                    document = module.default_document()
+                    document["playback"] = {"profile": profile, "rate": "fixed", "fps": "144"}
+                    document["interpolation"]["fi_precision"] = 4
+                    document["preferences"]["after_start"] = "keep_open"
+                    path.write_text(json.dumps(document))
+                    loaded = module.load_document(path)
+                    self.assertEqual(loaded["playback"], {"rate": "fixed", "fps": "144"})
+                    self.assertEqual(loaded["interpolation"]["fi_precision"], 4)
+                    self.assertEqual(loaded["preferences"]["after_start"], "keep_open")
+                    self.assertEqual(module.save_document(path, loaded), json.loads(path.read_text()))
+            self.assertNotIn("playback.profile", [field["path"] for field in module.describe_settings()["fields"]])
+
     def test_invalid_save_preserves_existing_settings(self):
         module = api()
         with tempfile.TemporaryDirectory() as directory:
@@ -211,11 +229,11 @@ class SettingsApiTests(unittest.TestCase):
         for mode, display, expected in (("monitor_half", 240, Fraction(120)), ("monitor_third", 240, Fraction(80)), ("source_2_5", 0, Fraction(60)), ("source_5", 0, Fraction(120))):
             with self.subTest(mode=mode):
                 document["playback"]["rate"] = mode
-                self.assertEqual(module.policy.select_rate(Fraction(24), display, "smooth", module.rate_argument(document)), expected)
+                self.assertEqual(module.policy.select_rate(Fraction(24), display, module.rate_argument(document)), expected)
         document["playback"].update(rate="fixed", fps="120000/1001")
         self.assertEqual(module.rate_argument(document), "120000/1001")
         with self.assertRaises(ValueError):
-            module.policy.select_rate(Fraction(2000000000), 0, "smooth", "source*2")
+            module.policy.select_rate(Fraction(2000000000), 0, "source*2")
 
     def test_metadata_contains_controls_and_honest_limitations(self):
         description = api().describe_settings()

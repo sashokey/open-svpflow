@@ -54,6 +54,63 @@ mp.register_event("video-reconfig", function() configure(false) end)
 local session_client
 local pending_load
 local json = require "mp.utils"
+local report_directory = os.getenv("OPEN_SVPFLOW_GRAPH_DIR")
+local cli_attempt = 0
+local cli_started = false
+local cli_failed = false
+
+local function read_cli_report()
+    local file = io.open(report_directory .. "/graph-" .. cli_attempt .. ".json", "r")
+    if not file then return {} end
+    local report = json.parse_json(file:read("*a"))
+    file:close()
+    return report or {}
+end
+
+local function fail_cli(message)
+    if cli_failed then return end
+    cli_failed = true
+    io.stderr:write("Open SVPflow: " .. (read_cli_report().message or message) .. "\n")
+    mp.commandv("quit", 2)
+end
+
+local function cli_filter_active(filters)
+    for _, filter in ipairs(filters or {}) do
+        if filter.label == "svp-interpolate" and filter.name == "vapoursynth" and filter.enabled ~= false then
+            return true
+        end
+    end
+    return false
+end
+
+if report_directory then
+    mp.enable_messages("error")
+    mp.register_event("log-message", function(event)
+        if not session_client and event.prefix:find("vapoursynth", 1, true) then
+            fail_cli("The interpolation filter could not process this video.")
+        end
+    end)
+    mp.register_event("playback-restart", function()
+        if session_client then return end
+        if cli_filter_active(mp.get_property_native("vf"))
+            and read_cli_report().target_fps and mp.get_property_native("video-out-params") then
+            cli_started = true
+        else
+            fail_cli("The selected source did not produce an interpolated video frame.")
+        end
+    end)
+    mp.observe_property("vf", "native", function(_, filters)
+        if not session_client and cli_started and not cli_filter_active(filters) then
+            fail_cli("The interpolation filter failed or was disabled")
+        end
+    end)
+    mp.register_event("end-file", function(event)
+        if not session_client and (event.reason == "error" or event.reason == "eof" and not cli_started) then
+            fail_cli("The selected source did not produce an interpolated video frame.")
+        end
+        cli_started = false
+    end)
+end
 
 local function sample_playback()
     if not session_client or pending_load or mp.get_property_bool("idle-active", true) then return end
@@ -97,5 +154,15 @@ mp.add_hook("on_load", 50, function(hook)
         hook:defer()
         pending_load = hook
         mp.commandv("script-message-to", session_client, "open-svpflow-before-load")
+    elseif report_directory then
+        cli_attempt = cli_attempt + 1
+        cli_started = false
+        local file = io.open(report_directory .. "/cli-attempt", "w")
+        if not file then
+            fail_cli("The interpolation filter could not process this video.")
+            return
+        end
+        file:write(tostring(cli_attempt))
+        file:close()
     end
 end)

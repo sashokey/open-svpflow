@@ -17,6 +17,7 @@ import sys
 import tempfile
 import threading
 import time
+from uuid import uuid4
 
 
 MAX_MESSAGE = 262144
@@ -105,11 +106,10 @@ class PlaybackQuality:
     counters = ("output_drops", "decoder_drops", "display_delays")
     unchecked = dict.fromkeys((*counters, "av_offset_ms"), None) | {"quality": "checking", "window_seconds": 0}
 
-    def __init__(self, title="", profile="auto", rate="auto"):
-        self.profile = profile
+    def __init__(self, title="", rate="auto"):
         self.rate = rate
         self.points = deque()
-        self.current = {"title": playback_title(title), "paused": False, "interpolation": False if profile == "original" else None,
+        self.current = {"title": playback_title(title), "paused": False, "interpolation": None,
                         "target_fps": None, "display_limited": False, **self.unchecked}
         self.last_seen = None
 
@@ -124,21 +124,15 @@ class PlaybackQuality:
         return dict(result)
 
     def filter_status(self, source, filtered, refresh):
-        if self.profile == "original":
-            return False, None
         if not source or source <= 0 or not filtered or filtered <= 0:
             return None, None
         from policy import select_rate
         try:
-            target = select_rate(source, refresh, self.profile, self.rate)
+            target = float(select_rate(source, refresh, self.rate))
         except ValueError:
             return None, None
-        if target is not None:
-            target = float(target)
-            if abs(filtered - target) <= target * 0.02 and abs(filtered - target) < abs(filtered - source):
-                return True, target
-        elif abs(filtered - source) <= source * 0.02:
-            return False, None
+        if abs(filtered - target) <= target * 0.02 and abs(filtered - target) < abs(filtered - source):
+            return True, target
         return None, None
 
     def sample(self, values, now):
@@ -189,6 +183,7 @@ class PlaylistController:
         self.command = command
         self.is_active = is_active
         self.pending = []
+        self.requested_entry = None
 
     def open(self, files, action="auto", policy="append"):
         if action not in ("auto", "append", "replace", "cancel") or policy not in ("append", "replace", "ask"):
@@ -206,7 +201,8 @@ class PlaylistController:
             return "ask"
         self.pending = []
         replace = not active or selected == "replace"
-        self.command(["loadfile", files[0], "replace" if replace else "append"])
+        reply = self.command(["loadfile", files[0], "replace" if replace else "append"])
+        self.requested_entry = reply.get("playlist_entry_id") if type(reply) is dict else None
         for file in files[1:]:
             self.command(["loadfile", file, "append"])
         return "started" if replace else "queued"
@@ -369,13 +365,18 @@ class PlaybackSession:
         self.active = False
         self.ever_started = False
         self.error = None
-        self.filter_required = True
+        self.failure = None
+        self.graph_attempt = 0
+        self.loading_entry = 0
+        self.confirmed_entry = 0
+        self.file_title = ""
         self.after_start = "quit_app"
         self.quality = PlaybackQuality()
         self.ready = threading.Event()
         self.bridge_ready = threading.Event()
         self.stopped = threading.Event()
         self.lock = threading.RLock()
+        self.failure_lock = threading.Lock()
         self.last_drop = None
         self.drop_jobs = queue.Queue(maxsize=32)
         self.playlist = PlaylistController(self._command, lambda: self.active)
@@ -404,6 +405,7 @@ class PlaybackSession:
         self.runtime = runtime
         address = self.runtime_dir / "mpv.sock"
         environment = runtime_environment(runtime.get("vsscript"), config_root=self.runtime_dir / "configuration")
+        environment["OPEN_SVPFLOW_GRAPH_DIR"] = str(self.runtime_dir)
         descriptor = os.open(self.state_dir / "playback.log", os.O_CREAT | os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
         self.log = os.fdopen(descriptor, "wb")
         command = [str(executable), "--idle=yes", "--force-window=no", "--terminal=no", "--input-terminal=no", "--input-ipc-server=" + str(address), "--input-builtin-drag-and-drop=no", "--script=" + str(self.bundle_root / "player" / "compat.lua")]
@@ -439,33 +441,40 @@ class PlaybackSession:
         from policy import build_command
         from dependencies import plugin_directory
         from settings_api import playback_settings, rate_argument
+        file = self.client.get("path")
+        self.file_title = playback_title(file)
         document = self._document()
         settings = playback_settings(document)
-        profile = document["playback"]["profile"]
-        self.filter_required = profile != "original"
         self.ready.clear()
         self.active = False
+        self.graph_attempt += 1
         self.after_start = document["preferences"]["after_start"]
-        file = self.client.get("path")
         rate = rate_argument(document)
-        self.quality = PlaybackQuality(file, profile, rate)
+        self.quality = PlaybackQuality(file, rate)
         plugins = plugin_directory(self.bundle_root)
-        command = build_command(str(self.runtime["mpv"]), file, self.bundle_root / "player" / "graph.vpy", plugins, settings, profile, rate)
+        command = build_command(str(self.runtime["mpv"]), file, self.bundle_root / "player" / "graph.vpy", plugins, settings, rate, attempt=self.graph_attempt)
         filters = self.client.get("vf", []) or []
         for value in filters:
             if value.get("label") in ("svp-input", "svp-interpolate"):
                 self.client.command(["vf", "remove", "@" + value["label"]])
         for argument in command:
             if argument.startswith("--vf-add="):
-                spec = argument[len("--vf-add="):].replace(",vapoursynth=", ",@svp-interpolate:vapoursynth=", 1)
-                self.client.command(["vf", "add", spec])
-        if profile != "original":
-            self.client.command(["set_property", "hr-seek-framedrop", "no"])
+                self.client.command(["vf", "add", argument[len("--vf-add="):]])
+        self.client.command(["set_property", "hr-seek-framedrop", "no"])
 
     def _filter_ok(self):
-        if not self.filter_required:
-            return True
-        return any(value.get("label") == "svp-interpolate" and value.get("enabled", True) for value in self.client.get("vf", []) or [])
+        return any(value.get("label") == "svp-interpolate" and value.get("name") == "vapoursynth" and value.get("enabled", True)
+                   for value in self.client.get("vf", []) or [])
+
+    def graph_report(self):
+        try:
+            return read_json(self.runtime_dir / f"graph-{self.graph_attempt}.json")
+        except (OSError, ValueError):
+            return {}
+
+    def fail_playback(self, message, report=None):
+        report = self.graph_report() if report is None else report
+        self.fail(report.get("message") or message, rate_error=report.get("rate_error") is True)
 
     def process_event(self, event):
         name = event.get("event")
@@ -485,21 +494,30 @@ class PlaybackSession:
                     sample = json.loads(arguments[1])
                     if type(sample) is dict:
                         self.quality.sample(sample, time.monotonic())
+        elif name == "start-file":
+            self.loading_entry = event["playlist_entry_id"]
         elif name == "playback-restart":
+            report = self.graph_report()
+            target = finite_number(report.get("target_fps"))
             if not self._filter_ok():
-                self.fail("The interpolation filter failed or was disabled")
-            elif not self.client.get("video-out-params"):
-                self.fail("The selected source did not produce a video frame")
+                self.fail_playback("The interpolation filter failed or was disabled", report)
+            elif not target or target <= 0 or not self.client.get("video-out-params"):
+                self.fail_playback("The selected source did not produce an interpolated video frame.", report)
             else:
+                self.quality.current.update(interpolation=True, target_fps=target)
+                self.confirmed_entry = self.loading_entry
                 self.active = True
                 self.ever_started = True
                 self.ready.set()
         elif name == "seek":
             self.quality.reset()
         elif name == "end-file":
+            was_active = self.active
             self.active = False
             if event.get("reason") == "error":
-                self.fail("mpv could not decode or process the selected movie")
+                self.fail_playback("mpv could not decode or process the selected movie")
+            elif event.get("reason") == "eof" and not was_active:
+                self.fail_playback("The selected source did not produce an interpolated video frame.")
             elif event.get("reason") == "quit":
                 self.stopped.set()
                 self.ready.set()
@@ -537,10 +555,10 @@ class PlaybackSession:
                         self.drop_jobs.put_nowait(videos)
                     except queue.Full:
                         self.fail("Too many file-open requests are pending")
-        elif name == "log-message" and self.filter_required and event.get("level") in ("error", "fatal"):
+        elif name == "log-message" and event.get("level") in ("error", "fatal"):
             prefix = event.get("prefix", "")
             if "vapoursynth" in prefix:
-                self.fail("VapourSynth could not process the movie; see playback.log")
+                self.fail_playback("The interpolation filter could not process this video.")
 
     def _events(self):
         while not self.stopped.is_set():
@@ -579,7 +597,13 @@ class PlaybackSession:
             files = media_files(files)
             if not files:
                 raise ValueError("Choose at least one movie")
-            self.start()
+            if self.client is None:
+                self.file_title = playback_title(files[0])
+                try:
+                    self.start()
+                except (OSError, ValueError, RuntimeError, TimeoutError) as error:
+                    self.fail(str(error))
+                    return self.snapshot()
             selected = document["preferences"]["new_files"] if action == "auto" else action
             if not self.active or selected == "replace":
                 self.ready.clear()
@@ -587,15 +611,22 @@ class PlaybackSession:
             if result == "ask":
                 return self.snapshot()
             if result == "started":
-                if not self.ready.wait(30):
-                    self.fail("The movie did not start in time; see playback.log")
-                if self.error or self.stopped.is_set():
-                    return self.snapshot()
+                deadline = time.monotonic() + 30
+                expected = self.playlist.requested_entry
+                while True:
+                    self.ready.clear()
+                    if self.error or self.stopped.is_set():
+                        return self.snapshot()
+                    if expected is not None and self.confirmed_entry >= expected:
+                        break
+                    if expected is None or not self.ready.wait(max(0, deadline - time.monotonic())):
+                        self.fail("The movie did not start in time; see playback.log")
+                        return self.snapshot()
             return self.snapshot(result)
 
     def snapshot(self, status=None):
-        if self.error:
-            return {"ok": False, "status": "error", "message": self.error, "after_start": self.after_start}
+        if self.failure is not None:
+            return self.failure
         active = self.active
         result = {"ok": True, "status": status or ("started" if active else "idle"), "after_start": self.after_start}
         if active:
@@ -604,17 +635,21 @@ class PlaybackSession:
             result.update(status="ask", files=list(self.playlist.pending))
         return result
 
-    def fail(self, message):
-        if self.error is not None:
-            return
-        self.error = str(message)
-        self.active = False
-        atomic_json(self.state_dir / "event.json", {"ok": False, "status": "error", "message": self.error})
-        self.ready.set()
-        self.stopped.set()
+    def fail(self, message, *, rate_error=False):
+        with self.failure_lock:
+            if self.failure is not None:
+                return
+            self.active = False
+            self.failure = {"ok": False, "status": "error", "message": str(message), "after_start": self.after_start,
+                            "failure_id": uuid4().hex, "file_title": self.file_title, "rate_error": rate_error}
+            self.error = self.failure["message"]
+        with contextlib.suppress(OSError, ValueError):
+            atomic_json(self.state_dir / "event.json", self.failure)
         if self.client is not None:
-            with contextlib.suppress(OSError, RuntimeError, TimeoutError):
+            with contextlib.suppress(OSError, ValueError, RuntimeError, TimeoutError):
                 self.client.command(["quit"], timeout=1)
+        self.stopped.set()
+        self.ready.set()
         self.notify(self.bundle_root)
 
     def close(self):

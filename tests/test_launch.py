@@ -18,6 +18,17 @@ spec.loader.exec_module(launch)
 
 
 class LaunchTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.plugins = Path(directory.name)
+        for name in ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib"):
+            (self.plugins / name).write_bytes(b"fixture")
+        environment = patch.object(launch, "runtime_environment", return_value={})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.plugin_options = ["--plugin-dir", str(self.plugins)]
+
     def test_cli_preserves_url_and_overrides_json_depth_and_backend(self):
         with tempfile.TemporaryDirectory() as directory:
             plugins = Path(directory)
@@ -44,10 +55,9 @@ class LaunchTests(unittest.TestCase):
             document["playback"]["profile"] = "original"
             configuration = Path(directory) / "settings.json"
             configuration.write_text(json.dumps(document))
-            with patch.object(launch.shutil, "which", return_value="/external/mpv"), patch.object(launch, "runtime_environment") as environment, patch.object(launch.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
-                self.assertEqual(launch.main(["--settings", str(configuration), "--", "memory://fixture"]), 0)
-            environment.assert_not_called()
-            self.assertFalse(any(arg.startswith("--vf") for arg in run.call_args.args[0]))
+            with patch.object(launch.shutil, "which", return_value="/external/mpv"), patch.object(launch.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
+                self.assertEqual(launch.main(self.plugin_options + ["--settings", str(configuration), "--", "memory://fixture"]), 0)
+            self.assertTrue(any(arg.startswith("--vf-add=") for arg in run.call_args.args[0]))
 
     def test_multiple_sources_form_one_ordered_external_playlist(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -56,7 +66,7 @@ class LaunchTests(unittest.TestCase):
             first.write_bytes(b"fixture")
             second.write_bytes(b"fixture")
             with patch.object(launch.shutil, "which", return_value="/external/mpv"), patch.object(launch.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
-                self.assertEqual(launch.main(["--profile", "original", "--", str(first), str(second)]), 0)
+                self.assertEqual(launch.main(self.plugin_options + ["--", str(first), str(second)]), 0)
             self.assertEqual(run.call_args.args[0][-3:], ["--", str(first.resolve()), str(second.resolve())])
 
     def test_invalid_later_source_prevents_any_player_launch(self):
@@ -65,19 +75,18 @@ class LaunchTests(unittest.TestCase):
             first.write_bytes(b"fixture")
             error = io.StringIO()
             with patch.object(launch.subprocess, "run") as run, patch.object(sys, "stderr", error), self.assertRaises(SystemExit) as stopped:
-                launch.main(["--profile", "original", "--", str(first), str(Path(directory) / "missing.mkv")])
+                launch.main(self.plugin_options + ["--", str(first), str(Path(directory) / "missing.mkv")])
             self.assertEqual(stopped.exception.code, 2)
             self.assertIn("readable local movie", error.getvalue())
             run.assert_not_called()
 
-    def test_original_protocol_playback_bypasses_graph_and_temporary_environment(self):
-        with patch.object(launch.shutil, "which", return_value="/external/mpv"), patch.object(launch, "runtime_environment") as environment, patch.object(launch.subprocess, "run", return_value=SimpleNamespace(returncode=0)) as run:
-            self.assertEqual(launch.main(["--profile", "original", "--", "memory://fixture"]), 0)
-        environment.assert_not_called()
-        command = run.call_args.args[0]
-        self.assertEqual(command[-2:], ["--", "memory://fixture"])
-        self.assertTrue(any(value.endswith("/player/compat.lua") for value in command if value.startswith("--script=")))
-        self.assertFalse(any(value.startswith("--vf") for value in command))
+    def test_removed_profile_cannot_select_original_playback(self):
+        error = io.StringIO()
+        with patch.object(launch, "subprocess") as player, patch.object(sys, "stderr", error), self.assertRaises(SystemExit) as stopped:
+            launch.main(self.plugin_options + ["--profile", "original", "--", "memory://fixture"])
+        self.assertEqual(stopped.exception.code, 2)
+        self.assertIn("unrecognized arguments: --profile", error.getvalue())
+        player.run.assert_not_called()
 
 
 if __name__ == "__main__":

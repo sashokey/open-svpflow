@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from unittest.mock import patch
 
 from smoke_mpv import write_video
 from smoke_plugins import check_intermediate
@@ -160,7 +161,7 @@ def headless_session(resources, directory, files, environment):
     state.mkdir(mode=0o700)
     document = backend(resources, state, "settings-get", environment=environment)["document"]
     document["interpolation"]["backend"] = "cpu"
-    document["playback"].update(profile="smooth", rate="fixed", fps="48")
+    document["playback"].update(rate="fixed", fps="48")
     backend(resources, state, "settings-save", {"document": document}, environment)
     record = client = None
     try:
@@ -217,6 +218,50 @@ def headless_session(resources, directory, files, environment):
     print("PASS: owned session and temporary resources cleaned after mpv exit", flush=True)
 
 
+def interpolation_failures(resources, directory, files, configuration):
+    from session import PlaybackSession, read_json
+    from settings_api import default_document, save_document
+
+    state = directory / "failure state"
+    settings = state / "settings.json"
+    document = default_document()
+    document["interpolation"]["backend"] = "cpu"
+    document["playback"].update(rate="fixed", fps="48")
+    save_document(settings, document)
+
+    with patch.dict(os.environ, {"MPV_HOME": str(configuration)}):
+        with tempfile.TemporaryDirectory(prefix="osvp-fail-", dir="/private/tmp") as runtime:
+            owner = PlaybackSession(state, resources, runtime, notify=lambda root: None)
+            try:
+                assert owner.open([str(file) for file in files[:2]])["status"] == "started"
+                document["playback"]["fps"] = "24"
+                save_document(settings, document)
+                owner.client.command(["playlist-next", "force"])
+                wait_for(owner.stopped.is_set, "The session continued after failing to interpolate the next file")
+                failure = read_json(state / "event.json")
+                assert failure["file_title"] == files[1].name, failure
+                assert failure["rate_error"] and "must be higher" in failure["message"], failure
+                assert owner.process.wait(timeout=5) == 0
+            finally:
+                owner.close()
+
+        document["playback"]["fps"] = "48"
+        save_document(settings, document)
+        with tempfile.TemporaryDirectory(prefix="osvp-retry-", dir="/private/tmp") as runtime:
+            owner = PlaybackSession(state, resources, runtime, notify=lambda root: None)
+            try:
+                assert owner.open([str(files[2])])["status"] == "started"
+                owner.client.command(["vf", "remove", "@svp-interpolate"])
+                wait_for(owner.stopped.is_set, "The session continued after losing the interpolation filter")
+                failure = read_json(state / "event.json")
+                assert failure["file_title"] == files[2].name, failure
+                assert "filter failed or was disabled" in failure["message"], failure
+                assert owner.process.wait(timeout=5) == 0
+            finally:
+                owner.close()
+    print("PASS: incompatible next file and filter loss closed mpv, reported the reason, and allowed a fresh session", flush=True)
+
+
 def gui_pids(app):
     executable = str(app / "Contents" / "MacOS" / "OpenSVPflow")
     listing = subprocess.run(["/bin/ps", "-axo", "pid=,args="], capture_output=True, text=True, check=True, timeout=5)
@@ -260,7 +305,7 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
     state.mkdir(parents=True, mode=0o700)
     document = backend(resources, state, "settings-get", environment=environment)["document"]
     document["interpolation"]["backend"] = "cpu"
-    document["playback"].update(profile="smooth", rate="fixed", fps="48")
+    document["playback"].update(rate="fixed", fps="48")
     document["preferences"]["after_start"] = "keep_open"
     backend(resources, state, "settings-save", {"document": document}, environment)
     probe = directory / "gui-runtime-probe"
@@ -357,6 +402,7 @@ def main():
         files, configuration = make_fixtures(directory)
         environment = dict(os.environ, MPV_HOME=str(configuration))
         headless_session(resources, directory, files, environment)
+        interpolation_failures(resources, directory, files, configuration)
         if options.gui:
             gui_lifetime(app, resources, directory, files, configuration, environment)
 

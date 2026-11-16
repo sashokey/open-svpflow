@@ -28,17 +28,16 @@ def policy():
 class RateTests(unittest.TestCase):
     def test_fractional_movie_follows_monitor_instead_of_fivefold_limit(self):
         p = policy()
-        self.assertEqual(p.select_rate(Fraction(24000, 1001), 240, "auto"), Fraction(240))
+        self.assertEqual(p.select_rate(Fraction(24000, 1001), 240), Fraction(240))
 
     def test_integer_movie_uses_full_monitor_refresh(self):
-        self.assertEqual(policy().select_rate(Fraction(24), 240, "auto"), Fraction(240))
+        self.assertEqual(policy().select_rate(Fraction(24), 240), Fraction(240))
 
     def test_automatic_rate_is_not_limited_to_a_fixed_refresh_list(self):
         p = policy()
         for display, expected in ((144, Fraction(144)), (165, Fraction(165)), (240.0024, Fraction(300003, 1250)), (360, Fraction(360))):
-            for profile in ("auto", "smooth"):
-                with self.subTest(display=display, profile=profile):
-                    self.assertEqual(p.select_rate(Fraction(24), display, profile), expected)
+            with self.subTest(display=display):
+                self.assertEqual(p.select_rate(Fraction(24), display), expected)
 
     def test_fractional_monitor_refresh_keeps_a_usable_rational_rate(self):
         target = policy().select_rate(Fraction(24000, 1001), 239.76023976023976)
@@ -61,38 +60,35 @@ class RateTests(unittest.TestCase):
 
     def test_monitor_above_source_accepts_less_than_double_rate(self):
         p = policy()
-        for profile in ("auto", "smooth"):
-            self.assertEqual(p.select_rate(Fraction(60), 100, profile), Fraction(100))
+        self.assertEqual(p.select_rate(Fraction(60), 100), Fraction(100))
 
-    def test_monitor_at_or_below_source_preserves_profile_behavior(self):
+    def test_monitor_at_or_below_source_prevents_interpolation(self):
         p = policy()
         for display in (60, 59.94):
             with self.subTest(display=display):
-                self.assertIsNone(p.select_rate(Fraction(60), display, "auto"))
-                with self.assertRaises(ValueError):
-                    p.select_rate(Fraction(60), display, "smooth")
+                with self.assertRaisesRegex(ValueError, "higher"):
+                    p.select_rate(Fraction(60), display)
 
-    def test_invalid_or_unrepresentable_monitor_rate_preserves_profile_behavior(self):
+    def test_invalid_or_unrepresentable_monitor_rate_prevents_interpolation(self):
         p = policy()
         for display in (None, "unknown", 0, -1, float("nan"), float("inf"), 2147483648):
             with self.subTest(display=display):
-                self.assertIsNone(p.select_rate(Fraction(24), display, "auto"))
                 with self.assertRaises(ValueError):
-                    p.select_rate(Fraction(24), display, "smooth")
+                    p.select_rate(Fraction(24), display)
 
     def test_explicit_rate_supports_bbb_30_to_60_without_display(self):
-        self.assertEqual(policy().select_rate(Fraction(30), 0, "smooth", "60"), Fraction(60))
+        self.assertEqual(policy().select_rate(Fraction(30), 0, "60"), Fraction(60))
 
     def test_high_source_and_explicit_target_rates_have_no_test_ceiling(self):
         p = policy()
         self.assertEqual(p.source_rate(120), Fraction(120))
-        self.assertEqual(p.select_rate(Fraction(120), 0, "smooth", "360"), Fraction(360))
-        self.assertEqual(p.select_rate(Fraction(120), 0, "smooth", "144"), Fraction(144))
+        self.assertEqual(p.select_rate(Fraction(120), 0, "360"), Fraction(360))
+        self.assertEqual(p.select_rate(Fraction(120), 0, "144"), Fraction(144))
 
     def test_precise_automatic_refresh_is_native_safe_for_high_source_rates(self):
         p = policy()
         source = Fraction(120000, 1001)
-        target = p.select_rate(source, 240.000001, "smooth")
+        target = p.select_rate(source, 240.000001)
         self.assertLessEqual(abs(float(target) - 240.000001), 0.00001)
         self.assertLessEqual((target / source).denominator, 2147483647)
         self.assertIsInstance(p.engine_options(p.DEFAULT_SETTINGS, source, target, 16), dict)
@@ -100,21 +96,20 @@ class RateTests(unittest.TestCase):
     def test_explicit_rate_rejects_native_phase_denominator_overflow(self):
         p = policy()
         with self.assertRaisesRegex(ValueError, "native"):
-            p.select_rate(Fraction(24000, 1001), 0, "smooth", "239000001/1000000")
+            p.select_rate(Fraction(24000, 1001), 0, "239000001/1000000")
 
     def test_native_phase_shift_overflow_is_rejected(self):
         p = policy()
         with self.assertRaisesRegex(ValueError, "native"):
-            p.select_rate(Fraction(1), 0, "smooth", "8388608")
+            p.select_rate(Fraction(1), 0, "8388608")
 
-    def test_unknown_display_does_not_silently_claim_interpolation(self):
+    def test_unknown_display_has_an_actionable_error(self):
         p = policy()
-        self.assertIsNone(p.select_rate(Fraction(24), 0, "auto"))
-        with self.assertRaises(ValueError):
-            p.select_rate(Fraction(24), 0, "smooth")
+        with self.assertRaisesRegex(ValueError, "Display refresh rate is unavailable"):
+            p.select_rate(Fraction(24), 0)
 
     def test_exact_119_display_is_not_promoted_to_120(self):
-        self.assertEqual(policy().select_rate(Fraction(24), 119, "auto"), Fraction(119))
+        self.assertEqual(policy().select_rate(Fraction(24), 119), Fraction(119))
 
     def test_source_fps_normalizes_decimal_ntsc_metadata(self):
         self.assertEqual(policy().source_rate(23.976), Fraction(24000, 1001))
@@ -127,7 +122,7 @@ class RateTests(unittest.TestCase):
                 p.source_rate(value)
         for value in ("0", "-60", "1/0", "nan", "24", "2147483648"):
             with self.subTest(value=value), self.assertRaises(ValueError):
-                p.select_rate(Fraction(24), 240, "smooth", value)
+                p.select_rate(Fraction(24), 240, value)
 
     def test_unrepresentable_source_rate_is_not_rounded_to_zero(self):
         with self.assertRaises(ValueError):
@@ -283,7 +278,7 @@ class SettingsTests(unittest.TestCase):
     def test_unsafe_relative_rate_products_use_native_absolute_options(self):
         p = policy()
         source = Fraction(2147483647, 1000000)
-        target = p.select_rate(source, 0, "smooth", "2147483647")
+        target = p.select_rate(source, 0, "2147483647")
         options = p.engine_options(p.DEFAULT_SETTINGS, source, target, 8)
         self.assertEqual(json.loads(options["smooth"])["rate"], {"num": 2147483647, "den": 1, "abs": True})
 
@@ -454,7 +449,9 @@ class SettingsTests(unittest.TestCase):
             path.write_text(json.dumps(settings))
             loaded = p.read_settings(path)
         token = p.encode_payload({"schema": 1, "plugins": "/plugins", "settings": loaded, "profile": "smooth", "fps": "120"})
-        self.assertEqual(p.decode_payload(token)["settings"]["native"]["smooth"]["debug"]["label"], "x" * 20000)
+        loaded_payload = p.decode_payload(token)
+        self.assertNotIn("profile", loaded_payload)
+        self.assertEqual(loaded_payload["settings"]["native"]["smooth"]["debug"]["label"], "x" * 20000)
         with self.assertRaises(ValueError):
             p.validate_settings({"native": {"smooth": {"linear": float("nan")}}})
 
@@ -599,9 +596,9 @@ class LauncherTests(unittest.TestCase):
                 plugins.mkdir()
                 for name in ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib"):
                     (plugins / name).write_bytes(b"plugin")
-                payload = p.encode_payload({"schema": 1, "plugins": str(plugins.resolve()), "settings": p.DEFAULT_SETTINGS, "profile": "smooth", "fps": "48"})
+                payload = p.encode_payload({"schema": 1, "plugins": str(plugins.resolve()), "settings": p.DEFAULT_SETTINGS, "fps": "48"})
                 if payload.endswith("="):
-                    argv = p.build_command(shutil.which("mpv"), movie, graph, plugins, p.DEFAULT_SETTINGS, profile="smooth", fps="48")
+                    argv = p.build_command(shutil.which("mpv"), movie, graph, plugins, p.DEFAULT_SETTINGS, fps="48")
                     result = subprocess.run(argv[:-2] + ["--no-config", "--load-scripts=no", "--vo=null", "--audio=no", "--idle=no"], capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     break
@@ -618,7 +615,7 @@ class LauncherTests(unittest.TestCase):
             plugins.mkdir()
             for name in ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib"):
                 (plugins / name).write_bytes(b"plugin")
-            argv = p.build_command("mpv", movie, ROOT / "player" / "graph.vpy", plugins, p.DEFAULT_SETTINGS, profile="smooth", fps="360")
+            argv = p.build_command("mpv", movie, ROOT / "player" / "graph.vpy", plugins, p.DEFAULT_SETTINGS, fps="360")
             self.assertEqual(argv[0], "mpv")
             self.assertEqual(argv[-2:], ["--", str(movie.resolve())])
             self.assertIn("--hr-seek-framedrop=no", argv)
@@ -663,33 +660,32 @@ class LauncherTests(unittest.TestCase):
             payload = p.decode_payload(token)
             self.assertEqual(payload["plugins"], str(plugins.resolve()))
 
-    def test_original_profile_does_not_require_plugins(self):
-        p = policy()
-        with tempfile.TemporaryDirectory() as temp:
-            movie = Path(temp) / "movie.mp4"
-            movie.write_bytes(b"movie")
-            argv = p.build_command("mpv", movie, ROOT / "player" / "graph.vpy", Path(temp) / "missing", p.DEFAULT_SETTINGS, profile="original")
-            self.assertFalse(any(arg.startswith("--vf-add=") for arg in argv))
-
     def test_time_bounds_are_forwarded_and_invalid_durations_are_rejected(self):
         p = policy()
         with tempfile.TemporaryDirectory() as temp:
             movie = Path(temp) / "movie.mp4"
             movie.write_bytes(b"movie")
-            arguments = ("mpv", movie, ROOT / "player" / "graph.vpy", Path(temp) / "missing", p.DEFAULT_SETTINGS)
-            argv = p.build_command(*arguments, profile="original", start=10.5, duration=7200)
+            plugins = Path(temp)
+            for name in p.PLUGIN_NAMES:
+                (plugins / name).write_bytes(b"plugin")
+            arguments = ("mpv", movie, ROOT / "player" / "graph.vpy", plugins, p.DEFAULT_SETTINGS)
+            argv = p.build_command(*arguments, start=10.5, duration=7200)
             self.assertIn("--start=10.5", argv)
             self.assertIn("--length=7200", argv)
             for duration in (0, -1, float("inf"), True):
                 with self.subTest(duration=duration), self.assertRaises(ValueError):
-                    p.build_command(*arguments, profile="original", duration=duration)
+                    p.build_command(*arguments, duration=duration)
 
     def test_remote_protocol_sources_and_stdin_are_forwarded_verbatim_to_fake_player(self):
         p = policy()
-        for source in ("https://example.invalid/movie name.mkv?token=a%2Fb#part", "ytdl://example.invalid/watch?v=test", "av://lavfi:testsrc", "fd://3", "-"):
-            with self.subTest(source=source):
-                command = p.build_command("fake-mpv", source, "/unused.vpy", "/unused", {}, profile="original")
-                self.assertEqual(command, ["fake-mpv", "--", source])
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            for name in p.PLUGIN_NAMES:
+                (root / name).write_bytes(b"plugin")
+            for source in ("https://example.invalid/movie name.mkv?token=a%2Fb#part", "ytdl://example.invalid/watch?v=test", "av://lavfi:testsrc", "fd://3", "-"):
+                with self.subTest(source=source):
+                    command = p.build_command("fake-mpv", source, ROOT / "player" / "graph.vpy", root, {})
+                    self.assertEqual(command[-2:], ["--", source])
 
     def test_explicit_buffer_controls_reach_only_the_vapoursynth_suboptions(self):
         p = policy()
@@ -707,6 +703,7 @@ class LauncherTests(unittest.TestCase):
         completed = subprocess.run([sys.executable, "-B", str(ROOT / "player" / "launch.py"), "--help"], capture_output=True, text=True)
         self.assertEqual(completed.returncode, 0)
         self.assertIn("--plugin-dir", completed.stdout)
+        self.assertNotIn("--profile", completed.stdout)
 
 
 if __name__ == "__main__":

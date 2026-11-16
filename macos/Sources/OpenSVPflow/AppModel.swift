@@ -2,6 +2,22 @@ import AppKit
 import Observation
 import OpenSVPflowCore
 
+enum InterpolationPreset: Hashable {
+    case factory, smooth, custom
+
+    func value(for path: String, defaults: JSONValue) -> JSONValue? {
+        if self == .smooth {
+            switch path {
+            case "interpolation.fi_mode": return .number(5)
+            case "interpolation.fi_precision": return .number(4)
+            case "interpolation.output_bits": return .number(8)
+            default: break
+            }
+        }
+        return defaults.value(at: path)
+    }
+}
+
 @MainActor
 @Observable
 final class AppModel {
@@ -15,8 +31,11 @@ final class AppModel {
     var setupMessage = AppText("Checking playback components…")
     var errorMessage: String?
     var showError = false
+    var showInterpolationFailure = false
+    private(set) var interpolationFailure: PlaybackFailure?
     var showAsk = false
     var document: JSONValue = .object([:])
+    var settingsDefaults: JSONValue = .object([:])
     var descriptors: [SettingDescriptor] = []
     var limitations: [String] = []
     var settingsGroup = "Interpolation"
@@ -32,6 +51,8 @@ final class AppModel {
     private var revision = 0
     private var savedRevision = 0
     private var lastSessionError: String?
+    private var seenInterpolationFailures: Set<String> = []
+    private var queuedInterpolationFailures: [PlaybackFailure] = []
     private var statusGeneration = 0
     private var acceptedFixedFPS: JSONValue?
     let resources: URL
@@ -45,6 +66,22 @@ final class AppModel {
 
     var playbackActive: Bool { presentation.playbackActive }
     var hasUnsavedChanges: Bool { savedRevision != revision }
+    private var presetFields: [SettingDescriptor] {
+        descriptors.filter { $0.group == "Interpolation" || $0.group == "Playback" }
+    }
+
+    var interpolationPreset: InterpolationPreset {
+        let fields = presetFields
+        guard !fields.isEmpty else { return .custom }
+        return [InterpolationPreset.factory, .smooth].first { preset in
+            fields.allSatisfy { field in
+                guard let actual = document.value(at: field.path),
+                      let expected = preset.value(for: field.path, defaults: settingsDefaults) else { return false }
+                return field.kind == "text" ? actual.text == expected.text : actual == expected
+            }
+        } ?? .custom
+    }
+
     var playbackFields: [SettingDescriptor] {
         let rate = document.value(at: "playback.rate")?.string
         return descriptors.filter { field in
@@ -82,7 +119,10 @@ final class AppModel {
                 return
             }
             let description = try await backend.call("describe")
-            guard let schema = description["description"] else { throw ProcessFailure.backend("The settings description is missing.") }
+            guard let schema = description["description"], let defaults = schema["defaults"] else {
+                throw ProcessFailure.backend("The settings description is missing.")
+            }
+            settingsDefaults = defaults
             descriptors = try schema["fields"]?.array.map(SettingDescriptor.init) ?? []
             limitations = schema["limitations"]?.array.compactMap(\.string) ?? []
             let settings = try await backend.call("settings-get")
@@ -147,21 +187,40 @@ final class AppModel {
 
     func edit(_ path: String, value: JSONValue) {
         do {
-            if acceptedFixedFPS == nil { acceptedFixedFPS = document.value(at: "playback.fps") }
-            try document.set(value, at: path)
-            revision += 1
-            let previous = saveTask
-            let snapshot = document
-            let currentRevision = revision
-            let fixedFPSIsHidden = path != "playback.fps" && snapshot.value(at: "playback.rate") != .string("fixed")
-            saving = true
-            saveTask = Task {
-                _ = await previous?.value
-                try? await Task.sleep(for: .milliseconds(250))
-                guard currentRevision == self.revision else { return true }
-                return await self.persist(snapshot, revision: currentRevision, fixedFPSIsHidden: fixedFPSIsHidden)
-            }
+            var snapshot = document
+            try snapshot.set(value, at: path)
+            saveEdit(snapshot, editingFixedFPS: path == "playback.fps")
         } catch { present("This setting could not be changed.") }
+    }
+
+    func applyInterpolationPreset(_ preset: InterpolationPreset) {
+        guard preset != .custom, preset != interpolationPreset else { return }
+        do {
+            var snapshot = document
+            for field in presetFields {
+                guard let value = preset.value(for: field.path, defaults: settingsDefaults) else {
+                    throw JSONValueError.invalidPath(field.path)
+                }
+                try snapshot.set(value, at: field.path)
+            }
+            saveEdit(snapshot, editingFixedFPS: true)
+        } catch { present("This setting could not be changed.") }
+    }
+
+    private func saveEdit(_ snapshot: JSONValue, editingFixedFPS: Bool) {
+        if acceptedFixedFPS == nil { acceptedFixedFPS = document.value(at: "playback.fps") }
+        document = snapshot
+        revision += 1
+        let previous = saveTask
+        let currentRevision = revision
+        let fixedFPSIsHidden = !editingFixedFPS && snapshot.value(at: "playback.rate") != .string("fixed")
+        saving = true
+        saveTask = Task {
+            _ = await previous?.value
+            try? await Task.sleep(for: .milliseconds(250))
+            guard currentRevision == self.revision else { return true }
+            return await self.persist(snapshot, revision: currentRevision, fixedFPSIsHidden: fixedFPSIsHidden)
+        }
     }
 
     func flushSettings() async -> Bool {
@@ -242,6 +301,8 @@ final class AppModel {
             let pending = presentation.takeReadyFiles()
             presentation.enqueue(pending)
             handle(result, userInitiated: action != "cancel" && pending.isEmpty, fallbackFiles: files)
+        } catch let failure as PlaybackFailure {
+            presentInterpolationFailure(failure)
         } catch { present(error.localizedDescription) }
     }
 
@@ -253,6 +314,8 @@ final class AppModel {
             let result = try await client.call("status", timeout: 5)
             guard generation == statusGeneration, !busy else { return }
             handle(result, userInitiated: false)
+        } catch let failure as PlaybackFailure {
+            presentInterpolationFailure(failure, updatePlayback: generation == statusGeneration && !busy)
         } catch {
             if generation == statusGeneration, !busy, phase == .ready { present(error.localizedDescription) }
         }
@@ -309,5 +372,26 @@ final class AppModel {
         errorMessage = AppDiagnostic(message)
         showError = true
         showMainWindow?()
+    }
+
+    private func presentInterpolationFailure(_ failure: PlaybackFailure, updatePlayback: Bool = true) {
+        guard seenInterpolationFailures.insert(failure.id).inserted else { return }
+        if updatePlayback {
+            playbackStatus = nil
+            _ = presentation.handle(status: "error", afterStart: "keep_open", userInitiated: false)
+        }
+        if showInterpolationFailure {
+            queuedInterpolationFailures.append(failure)
+            return
+        }
+        interpolationFailure = failure
+        showInterpolationFailure = true
+        showMainWindow?()
+    }
+
+    func showNextInterpolationFailure() {
+        guard !showInterpolationFailure, !queuedInterpolationFailures.isEmpty else { return }
+        interpolationFailure = queuedInterpolationFailures.removeFirst()
+        showInterpolationFailure = true
     }
 }

@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Terminal में इंस्टॉलेशन पूरा करें और फिर से जाँचने के लिए यहाँ लौटें। Homebrew ज़रूरी संबंधित पैकेज अपडेट कर सकता है।";
 "Conversion dithering" = "रूपांतरण में डिथरिंग";
 "Custom (%@)" = "कस्टम (%@)";
+"Custom" = "कस्टम";
 "Decoder Drops" = "डिकोड करते समय छूटे फ़्रेम";
 "Decrease grid step" = "ग्रिड के कदम को घटाना";
+"Default" = "डिफ़ॉल्ट";
 "Details" = "विवरण";
 "Disabled" = "बंद";
 "Display Delays" = "दिखाने में देरी";
+"Display refresh rate is unavailable." = "डिस्प्ले की रीफ़्रेश दर उपलब्ध नहीं है।";
 "Drop Movies Here" = "फ़िल्में यहाँ छोड़ें";
 "Duplicate frames removal" = "दोहराए गए फ़्रेम हटाना";
 "Error Diffusion" = "त्रुटि प्रसार";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "mpv और VapourSynth को उनके संगत Python रनटाइम के साथ इंस्टॉल करें।";
 "Install the external playback components before opening a movie." = "फ़िल्म खोलने से पहले बाहरी प्लेबैक घटक इंस्टॉल करें।";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "इंस्टॉलेशन के लिए इंटरनेट चाहिए और इससे ज़रूरी संबंधित Homebrew पैकेज अपडेट हो सकते हैं। सिस्टम पासवर्ड का अनुरोध Terminal में दिखता है।";
-"Interpolate when possible" = "संभव होने पर इंटरपोलेशन करें";
 "Interpolation" = "इंटरपोलेशन";
 "Interpolation On" = "इंटरपोलेशन चालू";
 "Keep Window Open" = "विंडो खुली रखें";
@@ -122,8 +124,6 @@
 "Open File…" = "फ़ाइल खोलें…";
 "Opening Movie…" = "फ़िल्म खोली जा रही है…";
 "Ordered" = "क्रमबद्ध";
-"Original" = "मूल";
-"Original Playback" = "मूल फ़्रेम दर पर प्लेबैक";
 "Output Drops" = "आउटपुट पर छूटे फ़्रेम";
 "Paused" = "रुका हुआ";
 "Pixel" = "पिक्सेल";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "प्लेबैक जारी नहीं रह सका।";
 "Playback dependencies are unavailable" = "प्लेबैक के ज़रूरी घटक उपलब्ध नहीं हैं";
 "Playback details are unavailable." = "प्लेबैक का विवरण उपलब्ध नहीं है।";
-"Playback mode" = "प्लेबैक मोड";
 "Playing" = "चल रहा है";
 "Preparing Playback" = "प्लेबैक तैयार किया जा रहा है";
 "Preserve source depth" = "स्रोत की बिट गहराई बनाए रखें";
+"Preset" = "प्रीसेट";
 "Processing of scene changes" = "दृश्य बदलने पर प्रोसेसिंग";
 "Processing threads" = "प्रोसेसिंग थ्रेड";
 "Quality monitoring resumes with playback." = "प्लेबैक फिर शुरू होने पर जाँच जारी रहेगी।";
@@ -148,7 +148,6 @@
 "Repeat frame" = "फ़्रेम दोहराएँ";
 "Repeated playback issues detected." = "प्लेबैक में बार-बार समस्या आ रही है।";
 "Replace Playlist" = "प्लेलिस्ट बदलें";
-"Require interpolation" = "इंटरपोलेशन अनिवार्य करें";
 "Retry" = "फिर कोशिश करें";
 "SVP shader" = "SVP शेडर";
 "Saving…" = "सहेजा जा रहा है…";
@@ -167,6 +166,7 @@
 "Small" = "छोटा";
 "Small and fast" = "छोटा और तेज़";
 "Smooth playback with your installed mpv." = "इंस्टॉल किए गए mpv के साथ सहज प्लेबैक।";
+"Smooth" = "स्मूद";
 "Some playback components need attention." = "प्लेबैक के कुछ घटकों पर ध्यान देने की ज़रूरत है।";
 "Source ×2" = "स्रोत ×2";
 "Source ×2.5" = "स्रोत ×2.5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "ऐप में इंस्टॉलेशन के निर्देश नहीं हैं। पूरा ऐप पैकेज डाउनलोड करें।";
 "The external mpv executable is unavailable" = "बाहरी mpv प्रोग्राम उपलब्ध नहीं है";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "यह तय फ़िल्म प्रीसेट इस ऐप का है। इसे SVP Manager की फ़ैक्टरी सेटिंग या Automatic प्रोफ़ाइल से सीधे नहीं लिया गया है। पैरामीटर का मिलान SVPflow API के दस्तावेज़ और जेनरेटर के देखे गए व्यवहार के आधार पर किया गया है।";
+"The interpolation filter could not process this video." = "इंटरपोलेशन फ़िल्टर इस वीडियो को प्रोसेस नहीं कर सका।";
 "The interpolation filter failed or was disabled" = "इंटरपोलेशन फ़िल्टर काम नहीं कर सका या बंद था";
 "The matching VSScript library is unavailable." = "संगत VSScript लाइब्रेरी उपलब्ध नहीं है।";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "संगत मूल VapourSynth API 4 वातावरण दोनों प्लगइन लोड नहीं कर सका।";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "प्लेबैक सेशन समाप्त हो गया है";
 "The playback session is busy; try again shortly" = "प्लेबैक सेशन व्यस्त है। थोड़ी देर बाद फिर कोशिश करें।";
 "The selected source did not produce a video frame" = "चुने गए स्रोत से कोई वीडियो फ़्रेम नहीं मिला";
+"The selected source did not produce an interpolated video frame." = "चुने गए स्रोत से कोई इंटरपोलेट किया गया वीडियो फ़्रेम नहीं मिला।";
 "The settings could not be saved." = "सेटिंग सहेजी नहीं जा सकीं।";
 "The settings description is missing." = "सेटिंग का विवरण उपलब्ध नहीं है।";
 "The settings document is missing." = "सेटिंग का दस्तावेज़ मौजूद नहीं है।";
+"The target frame rate exceeds native timing limits." = "लक्ष्य फ़्रेम दर इंटरपोलेशन की समय-सीमा से अधिक है।";
+"The target frame rate must be higher than the video's frame rate." = "लक्ष्य फ़्रेम दर वीडियो की फ़्रेम दर से अधिक होनी चाहिए।";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "वीडियो की फ़्रेम दर डिस्प्ले की रीफ़्रेश दर से ज़्यादा है। कम लक्ष्य फ़्रेम दर आज़माएँ।";
+"The video reports an invalid or unsupported frame rate." = "वीडियो की फ़्रेम दर अमान्य है या समर्थित नहीं है।";
 "This setting could not be changed." = "यह सेटिंग बदली नहीं जा सकी।";
 "Try a lower target frame rate or lighter interpolation settings." = "लक्ष्य फ़्रेम दर कम करके या हल्की इंटरपोलेशन सेटिंग चुनकर देखें।";
 "Unable to Continue" = "आगे नहीं बढ़ सके";
+"Unable to Interpolate" = "इंटरपोलेशन नहीं हो सका";
 "Unable to Save Settings" = "सेटिंग सहेजी नहीं जा सकीं";
 "Unable to start the playback session; see session.log" = "प्लेबैक सेशन शुरू नहीं हो सका। session.log देखें।";
 "Unable to verify the external playback components." = "बाहरी प्लेबैक घटकों की पुष्टि नहीं हो सकी।";

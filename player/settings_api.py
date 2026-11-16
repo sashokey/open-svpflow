@@ -28,7 +28,7 @@ INTERPOLATION_DEFAULTS = {
     "native": {"super": {}, "analyse": {}, "smooth": {}},
 }
 GRID = {32: (32, 0), 28: (32, 1), 24: (32, 2), 16: (16, 0), 14: (16, 1), 12: (16, 2), 8: (8, 0), 7: (8, 1), 6: (8, 2)}
-PLAYBACK_DEFAULTS = {"profile": "auto", "rate": "monitor", "fps": "120"}
+PLAYBACK_DEFAULTS = {"rate": "monitor", "fps": "120"}
 PREFERENCE_DEFAULTS = {"new_files": "append", "after_start": "quit_app"}
 RATES = {"monitor": "auto", "monitor_half": "monitor/2", "monitor_third": "monitor/3", "source_2": "source*2", "source_2_5": "source*5/2", "source_3": "source*3", "source_4": "source*4", "source_5": "source*5"}
 LIMITATIONS = [
@@ -115,13 +115,13 @@ def normalize_document(value):
     result = default_document()
     for section, defaults in (("playback", PLAYBACK_DEFAULTS), ("preferences", PREFERENCE_DEFAULTS)):
         supplied = value.get(section, {})
-        policy.need(type(supplied) is dict and set(supplied) <= set(defaults), "Unknown " + section + " settings")
-        result[section].update(supplied)
+        legacy_keys = {"profile"} if section == "playback" else set()
+        policy.need(type(supplied) is dict and set(supplied) <= set(defaults) | legacy_keys, "Unknown " + section + " settings")
+        result[section].update({key: value for key, value in supplied.items() if key in defaults})
     interpolation = validate_interpolation(value.get("interpolation", {}))
     interpolation.pop("schema")
     policy.need("legacy" not in interpolation, "Legacy preservation belongs to the document")
     result["interpolation"] = interpolation
-    _one_of(result["playback"]["profile"], ("auto", "smooth", "original"), "playback profile")
     _one_of(result["playback"]["rate"], (*RATES, "fixed"), "frame rate mode")
     policy.need(type(result["playback"]["fps"]) is str, "Fixed FPS must be a rational string")
     policy.target_rate(result["playback"]["fps"])
@@ -319,7 +319,6 @@ def describe_settings():
         field("interpolation." + key, label, "integer" if integer else "number", "Advanced", min=1 if key == "gpu_queues" else 0, max=maximum, step=1 if integer else 0.1)
     for key, label in (("buffered_frames", "mpv buffered frames"), ("concurrent_frames", "mpv concurrent frames")):
         field("interpolation." + key, label, "text", "Advanced", help="auto or a positive integer; use auto unless tuning against the installed mpv.")
-    field("playback.profile", "Playback mode", "choice", "Playback", [("auto", "Interpolate when possible"), ("smooth", "Require interpolation"), ("original", "Original")])
     field("playback.rate", "Target frame rate", "choice", "Playback", [(key, label) for key, label in (("monitor", "Monitor refresh rate"), ("monitor_half", "Half monitor refresh"), ("monitor_third", "One-third monitor refresh"), ("source_2", "Source ×2"), ("source_2_5", "Source ×2.5"), ("source_3", "Source ×3"), ("source_4", "Source ×4"), ("source_5", "Source ×5"), ("fixed", "Fixed FPS"))])
     field("playback.fps", "Fixed FPS", "text", "Playback", help="A positive integer, decimal or fraction, such as 120000/1001.")
     field("preferences.new_files", "New files during playback", "choice", "Behavior", [("append", "Add to Queue"), ("replace", "Replace Playlist"), ("ask", "Ask Every Time")])

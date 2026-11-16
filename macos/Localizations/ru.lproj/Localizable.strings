@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Завершите установку в Терминале, затем вернитесь сюда для повторной проверки. Homebrew может обновить связанные пакеты.";
 "Conversion dithering" = "Дизеринг при преобразовании";
 "Custom (%@)" = "Пользовательское значение (%@)";
+"Custom" = "Пользовательский";
 "Decoder Drops" = "Пропуски при декодировании";
 "Decrease grid step" = "Уменьшение шага сетки";
+"Default" = "По умолчанию";
 "Details" = "Подробности";
 "Disabled" = "Отключено";
 "Display Delays" = "Задержки вывода";
+"Display refresh rate is unavailable." = "Не удалось определить частоту обновления экрана.";
 "Drop Movies Here" = "Перетащите сюда видео";
 "Duplicate frames removal" = "Удаление повторяющихся кадров";
 "Error Diffusion" = "Диффузия ошибки";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "Установите mpv и VapourSynth с подходящей версией Python.";
 "Install the external playback components before opening a movie." = "Перед открытием видео установите внешние компоненты воспроизведения.";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "Установка требует подключения к интернету. Homebrew может обновить связанные пакеты. Запросы системного пароля появятся в Терминале.";
-"Interpolate when possible" = "Интерполировать, если возможно";
 "Interpolation" = "Интерполяция";
 "Interpolation On" = "Интерполяция включена";
 "Keep Window Open" = "Оставить окно открытым";
@@ -122,8 +124,6 @@
 "Open File…" = "Открыть файл…";
 "Opening Movie…" = "Открытие видео…";
 "Ordered" = "Упорядоченный";
-"Original" = "Исходное видео";
-"Original Playback" = "Воспроизведение без интерполяции";
 "Output Drops" = "Пропуски при выводе";
 "Paused" = "На паузе";
 "Pixel" = "До пикселя";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "Не удалось продолжить воспроизведение.";
 "Playback dependencies are unavailable" = "Компоненты воспроизведения недоступны";
 "Playback details are unavailable." = "Подробные данные о воспроизведении недоступны.";
-"Playback mode" = "Режим воспроизведения";
 "Playing" = "Воспроизводится";
 "Preparing Playback" = "Подготовка к воспроизведению";
 "Preserve source depth" = "Сохранить исходную глубину цвета";
+"Preset" = "Пресет";
 "Processing of scene changes" = "Обработка смены сцен";
 "Processing threads" = "Потоки обработки";
 "Quality monitoring resumes with playback." = "Проверка продолжится после возобновления воспроизведения.";
@@ -148,7 +148,6 @@
 "Repeat frame" = "Повторить кадр";
 "Repeated playback issues detected." = "Обнаружены повторяющиеся проблемы с воспроизведением.";
 "Replace Playlist" = "Заменить очередь";
-"Require interpolation" = "Требовать интерполяцию";
 "Retry" = "Повторить";
 "SVP shader" = "Шейдер SVP";
 "Saving…" = "Сохранение…";
@@ -167,6 +166,7 @@
 "Small" = "Малый";
 "Small and fast" = "Малый и быстрый";
 "Smooth playback with your installed mpv." = "Плавное воспроизведение через установленный mpv.";
+"Smooth" = "Плавный";
 "Some playback components need attention." = "Некоторые компоненты требуют настройки.";
 "Source ×2" = "Исходная частота ×2";
 "Source ×2.5" = "Исходная частота ×2,5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "Инструкции по установке отсутствуют. Загрузите полный выпуск приложения.";
 "The external mpv executable is unavailable" = "Исполняемый файл mpv недоступен";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "Профиль для фильмов поставляется с приложением. Универсальный заводской или автоматический профиль SVP Manager не воспроизводится. Параметры сопоставлены по документации SVPflow API и проверенному поведению генератора.";
+"The interpolation filter could not process this video." = "Фильтр интерполяции не смог обработать это видео.";
 "The interpolation filter failed or was disabled" = "Фильтр интерполяции отключён или завершился с ошибкой";
 "The matching VSScript library is unavailable." = "Не найдена подходящая библиотека VSScript.";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "Не удалось загрузить оба плагина в совместимом окружении VapourSynth API 4.";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "Сеанс воспроизведения завершён";
 "The playback session is busy; try again shortly" = "Сеанс воспроизведения занят. Попробуйте ещё раз чуть позже";
 "The selected source did not produce a video frame" = "В выбранном файле не удалось получить видеокадр";
+"The selected source did not produce an interpolated video frame." = "Не удалось получить интерполированный кадр из выбранного источника.";
 "The settings could not be saved." = "Не удалось сохранить настройки.";
 "The settings description is missing." = "Отсутствует описание настроек.";
 "The settings document is missing." = "Отсутствует файл настроек.";
+"The target frame rate exceeds native timing limits." = "Целевая частота кадров превышает ограничения интерполяции.";
+"The target frame rate must be higher than the video's frame rate." = "Целевая частота кадров должна быть выше частоты кадров видео.";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "Частота кадров выше частоты обновления дисплея. Попробуйте снизить целевую частоту кадров.";
+"The video reports an invalid or unsupported frame rate." = "Частота кадров видео недействительна или не поддерживается.";
 "This setting could not be changed." = "Не удалось изменить этот параметр.";
 "Try a lower target frame rate or lighter interpolation settings." = "Попробуйте снизить целевую частоту кадров или выбрать менее требовательные настройки интерполяции.";
 "Unable to Continue" = "Не удалось продолжить";
+"Unable to Interpolate" = "Не удалось выполнить интерполяцию";
 "Unable to Save Settings" = "Не удалось сохранить настройки";
 "Unable to start the playback session; see session.log" = "Не удалось начать сеанс воспроизведения. Подробности в session.log";
 "Unable to verify the external playback components." = "Не удалось проверить внешние компоненты воспроизведения.";

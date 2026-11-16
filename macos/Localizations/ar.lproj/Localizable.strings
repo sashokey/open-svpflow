@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "يرجى إكمال التثبيت في Terminal، ثم العودة إلى هنا لإعادة الفحص. قد يحدّث Homebrew الحزم ذات الصلة اللازمة.";
 "Conversion dithering" = "التنقيط اللوني عند التحويل";
 "Custom (%@)" = "مخصّص (⁨%@⁩)";
+"Custom" = "مخصص";
 "Decoder Drops" = "إطارات أُسقطت أثناء فك الترميز";
 "Decrease grid step" = "تقليل خطوة الشبكة";
+"Default" = "افتراضي";
 "Details" = "التفاصيل";
 "Disabled" = "معطّل";
 "Display Delays" = "حالات تأخّر العرض";
+"Display refresh rate is unavailable." = "تعذر تحديد معدل تحديث الشاشة.";
 "Drop Movies Here" = "إفلات الأفلام هنا";
 "Duplicate frames removal" = "إزالة الإطارات المكرّرة";
 "Error Diffusion" = "انتشار الخطأ";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "يرجى تثبيت mpv وVapourSynth مع بيئة تشغيل Python المتوافقة.";
 "Install the external playback components before opening a movie." = "يرجى تثبيت مكوّنات التشغيل الخارجية قبل فتح فيلم.";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "يستخدم التثبيت الإنترنت وقد يحدّث حزم Homebrew ذات الصلة اللازمة. تظهر طلبات كلمة مرور النظام في Terminal.";
-"Interpolate when possible" = "الاستيفاء عند الإمكان";
 "Interpolation" = "الاستيفاء";
 "Interpolation On" = "استيفاء الإطارات مفعّل";
 "Keep Window Open" = "إبقاء النافذة مفتوحة";
@@ -122,8 +124,6 @@
 "Open File…" = "فتح ملف…";
 "Opening Movie…" = "يجري فتح الفيلم…";
 "Ordered" = "مرتّب";
-"Original" = "أصلي";
-"Original Playback" = "التشغيل بمعدل الإطارات الأصلي";
 "Output Drops" = "إطارات أُسقطت عند الإخراج";
 "Paused" = "متوقف مؤقتًا";
 "Pixel" = "بكسل";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "تعذّرت متابعة التشغيل.";
 "Playback dependencies are unavailable" = "مكوّنات التشغيل المطلوبة غير متاحة";
 "Playback details are unavailable." = "تفاصيل التشغيل غير متاحة.";
-"Playback mode" = "وضع التشغيل";
 "Playing" = "يجري التشغيل";
 "Preparing Playback" = "يجري تجهيز التشغيل";
 "Preserve source depth" = "الاحتفاظ بعمق البت في المصدر";
+"Preset" = "إعداد مسبق";
 "Processing of scene changes" = "معالجة تغيّرات المشاهد";
 "Processing threads" = "مسارات تنفيذ المعالجة";
 "Quality monitoring resumes with playback." = "تُستأنف مراقبة الجودة عند متابعة التشغيل.";
@@ -148,7 +148,6 @@
 "Repeat frame" = "تكرار الإطار";
 "Repeated playback issues detected." = "رُصدت مشكلات متكررة في التشغيل.";
 "Replace Playlist" = "استبدال قائمة التشغيل";
-"Require interpolation" = "الاستيفاء إلزامي";
 "Retry" = "إعادة المحاولة";
 "SVP shader" = "برنامج تظليل SVP‏";
 "Saving…" = "جارٍ الحفظ…";
@@ -167,6 +166,7 @@
 "Small" = "صغير";
 "Small and fast" = "صغير وسريع";
 "Smooth playback with your installed mpv." = "تشغيل سلس باستخدام mpv المثبّت.";
+"Smooth" = "سلس";
 "Some playback components need attention." = "تحتاج بعض مكوّنات التشغيل إلى انتباه.";
 "Source ×2" = "المصدر ⁦×2⁩";
 "Source ×2.5" = "المصدر ⁦×2.5⁩";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "تعليمات التثبيت المرفقة مفقودة. يرجى تنزيل حزمة التطبيق كاملة.";
 "The external mpv executable is unavailable" = "ملف mpv الخارجي التنفيذي غير متاح";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "الإعداد المسبق الثابت للأفلام خاص بهذا التطبيق ولا يعيد إنتاج إعداد المصنع العام أو الوضع التلقائي في SVP Manager. يستند تعيين الإعدادات إلى واجهة SVPflow البرمجية الموثّقة وسلوك المولّد الذي جرى فحصه.";
+"The interpolation filter could not process this video." = "تعذر على مرشح الاستيفاء معالجة هذا الفيديو.";
 "The interpolation filter failed or was disabled" = "تعطّل مرشّح الاستيفاء أو جرى إيقافه";
 "The matching VSScript library is unavailable." = "مكتبة VSScript المتوافقة غير متاحة.";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "تعذّر على بيئة VapourSynth الأصلية المتوافقة مع API 4 تحميل الإضافتين.";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "انتهت جلسة التشغيل";
 "The playback session is busy; try again shortly" = "جلسة التشغيل مشغولة. يرجى إعادة المحاولة بعد قليل.";
 "The selected source did not produce a video frame" = "لم ينتج المصدر المحدد أي إطار فيديو";
+"The selected source did not produce an interpolated video frame." = "لم ينتج المصدر المحدد إطار فيديو مستوفًى.";
 "The settings could not be saved." = "تعذّر حفظ الإعدادات.";
 "The settings description is missing." = "وصف الإعدادات مفقود.";
 "The settings document is missing." = "مستند الإعدادات مفقود.";
+"The target frame rate exceeds native timing limits." = "يتجاوز معدل الإطارات المستهدف حدود توقيت الاستيفاء.";
+"The target frame rate must be higher than the video's frame rate." = "يجب أن يكون معدل الإطارات المستهدف أعلى من معدل إطارات الفيديو.";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "يتجاوز معدل إطارات الفيديو معدل تحديث الشاشة. يمكن تجربة معدل إطارات مستهدف أقل.";
+"The video reports an invalid or unsupported frame rate." = "معدل إطارات الفيديو غير صالح أو غير مدعوم.";
 "This setting could not be changed." = "تعذّر تغيير هذا الإعداد.";
 "Try a lower target frame rate or lighter interpolation settings." = "يمكن تجربة معدل إطارات مستهدف أقل أو إعدادات استيفاء أخف.";
 "Unable to Continue" = "تعذّرت المتابعة";
+"Unable to Interpolate" = "تعذر استيفاء الإطارات";
 "Unable to Save Settings" = "تعذّر حفظ الإعدادات";
 "Unable to start the playback session; see session.log" = "تعذّر بدء جلسة التشغيل. يرجى الرجوع إلى ⁦session.log⁩.";
 "Unable to verify the external playback components." = "تعذّر التحقق من مكوّنات التشغيل الخارجية.";

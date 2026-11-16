@@ -129,13 +129,29 @@ def interpolate(clip, settings, source, target, directory, gpu=None):
 
 
 def bootstrap(clip, nominal_fps, refresh, payload):
-    source = policy.source_rate(nominal_fps)
     value = policy.decode_payload(payload)
-    target = policy.select_rate(source, refresh, value["profile"], value["fps"])
-    if target is None:
-        print("Open SVPflow: original-rate playback selected because no compatible refresh was reported", file=sys.stderr)
-        return clip
-    output = interpolate(clip, value["settings"], source, target, value["plugins"])
+    attempt = policy.graph_attempt(value.get("attempt"))
+    try:
+        source = policy.source_rate(nominal_fps)
+    except ValueError:
+        policy.write_graph_report(attempt, {"message": "The video reports an invalid or unsupported frame rate."})
+        raise
+    try:
+        target = policy.select_rate(source, refresh, value["fps"])
+    except ValueError as error:
+        policy.write_graph_report(attempt, {"message": str(error), "rate_error": True})
+        raise
+    try:
+        output = interpolate(clip, value["settings"], source, target, value["plugins"])
+    except (OSError, ValueError, RuntimeError, vs.Error):
+        policy.write_graph_report(attempt, {"message": "The interpolation filter could not process this video."})
+        raise
+    if attempt is not None:
+        def confirm_frame(n, f):
+            if n == 0:
+                policy.write_graph_report(attempt, {"target_fps": float(target)})
+            return f
+        output = vs.core.std.ModifyFrame(output, clips=output, selector=confirm_frame)
     print("Open SVPflow: interpolation target " + str(target) + " FPS at " + str(output.width) + "x" + str(output.height), file=sys.stderr)
     return output
 

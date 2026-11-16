@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "ターミナルでインストールを完了してから、ここに戻って再確認してください。Homebrewによって関連する必須パッケージが更新される場合があります。";
 "Conversion dithering" = "変換時のディザリング";
 "Custom (%@)" = "カスタム（%@）";
+"Custom" = "カスタム";
 "Decoder Drops" = "デコード時に欠落したフレーム";
 "Decrease grid step" = "グリッド間隔の細分化";
+"Default" = "デフォルト";
 "Details" = "詳細を表示";
 "Disabled" = "無効";
 "Display Delays" = "表示の遅延回数";
+"Display refresh rate is unavailable." = "ディスプレイのリフレッシュレートを取得できません。";
 "Drop Movies Here" = "ここに動画をドロップ";
 "Duplicate frames removal" = "重複フレームの除去";
 "Error Diffusion" = "誤差拡散";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "mpvとVapourSynth、および対応するPythonランタイムをインストールしてください。";
 "Install the external playback components before opening a movie." = "動画を開く前に、外部の再生コンポーネントをインストールしてください。";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "インストールにはインターネット接続が必要です。Homebrewの関連パッケージが更新される場合があります。システムのパスワード入力はターミナルに表示されます。";
-"Interpolate when possible" = "可能な場合は補間";
 "Interpolation" = "フレーム補間";
 "Interpolation On" = "フレーム補間オン";
 "Keep Window Open" = "ウインドウを開いたままにする";
@@ -122,8 +124,6 @@
 "Open File…" = "ファイルを開く…";
 "Opening Movie…" = "動画を開いています…";
 "Ordered" = "順序ディザ";
-"Original" = "元の映像";
-"Original Playback" = "元のフレームレートで再生";
 "Output Drops" = "表示時に欠落したフレーム";
 "Paused" = "一時停止中";
 "Pixel" = "ピクセル精度";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "再生を続けられませんでした。";
 "Playback dependencies are unavailable" = "再生に必要なコンポーネントを利用できません。";
 "Playback details are unavailable." = "再生の詳細を表示できません。";
-"Playback mode" = "再生モード";
 "Playing" = "再生中";
 "Preparing Playback" = "再生を準備中";
 "Preserve source depth" = "ソースのビット深度を保持";
+"Preset" = "プリセット";
 "Processing of scene changes" = "シーン切り替え時の処理";
 "Processing threads" = "処理スレッド数";
 "Quality monitoring resumes with playback." = "再生を再開すると品質の確認が再開されます。";
@@ -148,7 +148,6 @@
 "Repeat frame" = "フレームを繰り返す";
 "Repeated playback issues detected." = "再生中に問題が繰り返し検出されています。";
 "Replace Playlist" = "プレイリストを置き換え";
-"Require interpolation" = "補間を必須にする";
 "Retry" = "再試行";
 "SVP shader" = "SVPシェーダ";
 "Saving…" = "保存中…";
@@ -167,6 +166,7 @@
 "Small" = "小";
 "Small and fast" = "小（高速）";
 "Smooth playback with your installed mpv." = "インストール済みのmpvで滑らかに再生します。";
+"Smooth" = "滑らか";
 "Some playback components need attention." = "一部の再生コンポーネントを確認してください。";
 "Source ×2" = "ソース ×2";
 "Source ×2.5" = "ソース ×2.5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "同梱のインストール手順が見つかりません。完全なアプリパッケージをダウンロードしてください。";
 "The external mpv executable is unavailable" = "外部mpvの実行ファイルを利用できません。";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "固定の映画用プリセットはこのアプリ独自のものです。SVP Manager共通の出荷時プロファイルや自動プロファイルを再現したものではありません。設定パラメータは、公開されているSVPflow APIと確認済みの設定生成処理に基づいて対応付けられています。";
+"The interpolation filter could not process this video." = "補間フィルタでこの動画を処理できませんでした。";
 "The interpolation filter failed or was disabled" = "補間フィルタに問題が発生したか、無効になりました。";
 "The matching VSScript library is unavailable." = "対応するVSScriptライブラリを利用できません。";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "対応するネイティブVapourSynth API 4環境で、2つのプラグインを読み込めませんでした。";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "再生セッションは終了しました。";
 "The playback session is busy; try again shortly" = "再生セッションは処理中です。少し待ってからやり直してみてください。";
 "The selected source did not produce a video frame" = "選択したソースから映像フレームを取得できませんでした。";
+"The selected source did not produce an interpolated video frame." = "選択したソースから補間されたフレームを取得できませんでした。";
 "The settings could not be saved." = "設定を保存できませんでした。";
 "The settings description is missing." = "設定項目の定義がありません。";
 "The settings document is missing." = "設定ファイルがありません。";
+"The target frame rate exceeds native timing limits." = "目標フレームレートが補間処理の上限を超えています。";
+"The target frame rate must be higher than the video's frame rate." = "目標フレームレートは動画のフレームレートより高くする必要があります。";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "動画のフレームレートがディスプレイのリフレッシュレートを超えています。目標フレームレートを下げてみてください。";
+"The video reports an invalid or unsupported frame rate." = "動画のフレームレートが無効か、サポートされていません。";
 "This setting could not be changed." = "この設定を変更できませんでした。";
 "Try a lower target frame rate or lighter interpolation settings." = "目標フレームレートを下げるか、負荷の軽い補間設定をお試しください。";
 "Unable to Continue" = "続行できません";
+"Unable to Interpolate" = "補間できません";
 "Unable to Save Settings" = "設定を保存できません";
 "Unable to start the playback session; see session.log" = "再生セッションを開始できませんでした。session.logを参照してください。";
 "Unable to verify the external playback components." = "外部の再生コンポーネントを確認できませんでした。";

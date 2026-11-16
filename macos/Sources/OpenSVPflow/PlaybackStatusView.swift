@@ -87,7 +87,7 @@ struct PlaybackStatusView: View {
 
     private var interpolationSummary: String {
         guard let status else { return "" }
-        let mode: String? = status.interpolation.map { AppText($0 ? "Interpolation On" : "Original Playback") }
+        let mode = status.interpolation == true ? AppText("Interpolation On") : nil
         let target = status.targetFPS.map { String(format: AppText("Target: %@ FPS"), decimal($0)) }
         return [mode, target].compactMap { $0 }.joined(separator: " · ")
     }

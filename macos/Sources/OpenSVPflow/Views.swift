@@ -26,6 +26,21 @@ struct MainView: View {
         } message: {
             Text(model.errorMessage ?? AppText("An unexpected error occurred."))
         }
+        .alert(AppText("Unable to Interpolate"), isPresented: $model.showInterpolationFailure, presenting: model.interpolationFailure) { failure in
+            if failure.rateError {
+                Button(AppText("Settings…")) {
+                    model.settingsGroup = "Interpolation"
+                    model.revealTargetRate = true
+                    openSettings()
+                }
+            }
+            Button(AppText("OK"), role: .cancel) {}
+        } message: { failure in
+            Text([failure.title, AppDiagnostic(failure.message)].filter { !$0.isEmpty }.joined(separator: "\n\n"))
+        }
+        .onChange(of: model.showInterpolationFailure) { _, showing in
+            if !showing { model.showNextInterpolationFailure() }
+        }
         .alert(AppText("A Movie Is Already Playing"), isPresented: $model.showAsk) {
             Button(AppText("Add to Queue")) { model.resolveAsk("append") }
             Button(AppText("Replace Playlist"), role: .destructive) { model.resolveAsk("replace") }
@@ -206,6 +221,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if group == "Interpolation" {
+                        presetGroup
                         settingsGroup(model.playbackFields)
                     }
                     settingsGroup(model.descriptors.filter { $0.group == group }, includesLanguage: group == "Behavior")
@@ -238,8 +254,33 @@ struct SettingsView: View {
         }
     }
 
+    private var presetGroup: some View {
+        let label = AppText("Preset")
+        let selection = Binding(get: { model.interpolationPreset }, set: model.applyInterpolationPreset)
+        return settingsCard(
+            HStack(spacing: 16) {
+                Text(label)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityHidden(true)
+                Picker(label, selection: selection) {
+                    Text(AppText("Default")).tag(InterpolationPreset.factory)
+                    Text(AppText("Smooth")).tag(InterpolationPreset.smooth)
+                    if model.interpolationPreset == .custom {
+                        Text(AppText("Custom")).tag(InterpolationPreset.custom)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .disabled(model.busy)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 11)
+        )
+    }
+
     private func settingsGroup(_ fields: [SettingDescriptor], includesLanguage: Bool = false) -> some View {
-        VStack(spacing: 0) {
+        settingsCard(VStack(spacing: 0) {
             ForEach(fields) { field in
                 SettingRow(field: field, model: model)
                     .padding(.horizontal, 14)
@@ -257,13 +298,17 @@ struct SettingsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 11)
             }
-        }
-        .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 9))
-        .overlay {
-            RoundedRectangle(cornerRadius: 9)
-                .strokeBorder(Color.primary.opacity(0.12))
-                .allowsHitTesting(false)
-        }
+        })
+    }
+
+    private func settingsCard(_ content: some View) -> some View {
+        content
+            .background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 9))
+            .overlay {
+                RoundedRectangle(cornerRadius: 9)
+                    .strokeBorder(Color.primary.opacity(0.12))
+                    .allowsHitTesting(false)
+            }
     }
 
     private func symbol(_ group: String) -> String {

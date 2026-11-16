@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Conclua a instalação no Terminal e volte a esta janela para repetir a verificação. O Homebrew poderá atualizar os pacotes associados necessários.";
 "Conversion dithering" = "Dithering de conversão";
 "Custom (%@)" = "Personalizado (%@)";
+"Custom" = "Personalizado";
 "Decoder Drops" = "Fotogramas perdidos na descodificação";
 "Decrease grid step" = "Redução do passo da grelha";
+"Default" = "Predefinido";
 "Details" = "Detalhes";
 "Disabled" = "Desativada";
 "Display Delays" = "Atrasos na apresentação";
+"Display refresh rate is unavailable." = "A taxa de atualização do ecrã não está disponível.";
 "Drop Movies Here" = "Arraste filmes para aqui";
 "Duplicate frames removal" = "Remoção de fotogramas duplicados";
 "Error Diffusion" = "Difusão de erro";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "Instale o mpv e o VapourSynth, juntamente com a versão de Python compatível.";
 "Install the external playback components before opening a movie." = "Instale os componentes externos de reprodução antes de abrir um filme.";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "A instalação utiliza a Internet e poderá atualizar os pacotes associados necessários do Homebrew. Os pedidos de palavra‑passe do sistema aparecem no Terminal.";
-"Interpolate when possible" = "Interpolar quando possível";
 "Interpolation" = "Interpolação";
 "Interpolation On" = "Interpolação ativada";
 "Keep Window Open" = "Manter a janela aberta";
@@ -122,8 +124,6 @@
 "Open File…" = "Abrir ficheiro…";
 "Opening Movie…" = "A abrir o filme…";
 "Ordered" = "Ordenado";
-"Original" = "Original";
-"Original Playback" = "Reprodução original";
 "Output Drops" = "Fotogramas perdidos na saída";
 "Paused" = "Em pausa";
 "Pixel" = "Píxel";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "Não foi possível continuar a reprodução.";
 "Playback dependencies are unavailable" = "As dependências de reprodução estão indisponíveis";
 "Playback details are unavailable." = "Os detalhes da reprodução estão indisponíveis.";
-"Playback mode" = "Modo de reprodução";
 "Playing" = "A reproduzir";
 "Preparing Playback" = "A preparar a reprodução";
 "Preserve source depth" = "Preservar a profundidade de origem";
+"Preset" = "Predefinição";
 "Processing of scene changes" = "Tratamento de mudanças de cena";
 "Processing threads" = "Processos de execução para processamento";
 "Quality monitoring resumes with playback." = "A monitorização é retomada quando a reprodução continuar.";
@@ -148,7 +148,6 @@
 "Repeat frame" = "Repetir fotograma";
 "Repeated playback issues detected." = "Foram detetados problemas repetidos durante a reprodução.";
 "Replace Playlist" = "Substituir lista de reprodução";
-"Require interpolation" = "Exigir interpolação";
 "Retry" = "Tentar novamente";
 "SVP shader" = "Shader SVP";
 "Saving…" = "A guardar…";
@@ -167,6 +166,7 @@
 "Small" = "Pequeno";
 "Small and fast" = "Pequeno e rápido";
 "Smooth playback with your installed mpv." = "Reprodução fluida no mpv instalado.";
+"Smooth" = "Fluido";
 "Some playback components need attention." = "Alguns componentes de reprodução requerem atenção.";
 "Source ×2" = "Origem ×2";
 "Source ×2.5" = "Origem ×2,5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "Faltam as instruções de instalação incluídas na aplicação. Descarregue um pacote completo da aplicação.";
 "The external mpv executable is unavailable" = "O executável externo do mpv está indisponível";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "Esta predefinição de filme tem parâmetros fixos e é própria da aplicação. Os perfis de fábrica e o modo Automático do SVP Manager são distintos. A correspondência entre parâmetros segue a API documentada do SVPflow e o comportamento observado do gerador.";
+"The interpolation filter could not process this video." = "O filtro de interpolação não conseguiu processar este vídeo.";
 "The interpolation filter failed or was disabled" = "O filtro de interpolação falhou ou foi desativado";
 "The matching VSScript library is unavailable." = "A biblioteca VSScript compatível está indisponível.";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "O ambiente nativo compatível com a API 4 do VapourSynth não conseguiu carregar os dois plug-ins.";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "A sessão de reprodução terminou";
 "The playback session is busy; try again shortly" = "A sessão de reprodução está ocupada. Tente novamente dentro de instantes";
 "The selected source did not produce a video frame" = "A origem selecionada não produziu nenhum fotograma";
+"The selected source did not produce an interpolated video frame." = "A fonte selecionada não produziu nenhum fotograma interpolado.";
 "The settings could not be saved." = "Não foi possível guardar as definições.";
 "The settings description is missing." = "Falta a descrição das definições.";
 "The settings document is missing." = "Falta o documento de definições.";
+"The target frame rate exceeds native timing limits." = "A taxa de fotogramas pretendida excede os limites da interpolação.";
+"The target frame rate must be higher than the video's frame rate." = "A taxa de fotogramas pretendida tem de ser superior à do vídeo.";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "A taxa de fotogramas do vídeo é superior à taxa de atualização do ecrã. Experimente reduzir a taxa de fotogramas pretendida.";
+"The video reports an invalid or unsupported frame rate." = "A taxa de fotogramas do vídeo é inválida ou incompatível.";
 "This setting could not be changed." = "Não foi possível alterar esta definição.";
 "Try a lower target frame rate or lighter interpolation settings." = "Experimente reduzir a taxa de fotogramas pretendida ou usar definições de interpolação menos exigentes.";
 "Unable to Continue" = "Não foi possível continuar";
+"Unable to Interpolate" = "Não foi possível interpolar";
 "Unable to Save Settings" = "Não foi possível guardar as definições";
 "Unable to start the playback session; see session.log" = "Não foi possível iniciar a sessão de reprodução. Consulte session.log";
 "Unable to verify the external playback components." = "Não foi possível verificar os componentes externos de reprodução.";

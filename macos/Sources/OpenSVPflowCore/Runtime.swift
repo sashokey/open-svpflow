@@ -1,6 +1,14 @@
 import Darwin
 import Foundation
 
+public struct PlaybackFailure: LocalizedError, Sendable {
+    public let id: String
+    public let title: String
+    public let message: String
+    public let rateError: Bool
+    public var errorDescription: String? { message }
+}
+
 public enum ProcessFailure: LocalizedError, Sendable {
     case timeout
     case outputLimit
@@ -160,7 +168,12 @@ public struct BackendClient: Sendable {
             throw ProcessFailure.backend(diagnostics.isEmpty ? "The playback helper returned an unreadable response." : String(diagnostics.suffix(4096)))
         }
         guard result.exitCode == 0, value["ok"]?.boolean == true else {
-            throw ProcessFailure.backend(value["message"]?.string ?? "The playback helper could not complete the operation.")
+            let message = value["message"]?.string ?? "The playback helper could not complete the operation."
+            if let id = value["failure_id"]?.string {
+                throw PlaybackFailure(id: id, title: value["file_title"]?.string ?? "", message: message,
+                                      rateError: value["rate_error"]?.boolean == true)
+            }
+            throw ProcessFailure.backend(message)
         }
         return value
     }

@@ -1,7 +1,11 @@
 from fractions import Fraction
+import json
+import os
 from pathlib import Path
 import runpy
+import tempfile
 import unittest
+from unittest.mock import patch
 
 try:
     import vapoursynth as vs
@@ -35,6 +39,21 @@ class GraphTests(unittest.TestCase):
 
     def prepare(self, clip, **kwargs):
         return self.graph["prepare_clip"](clip, **kwargs)
+
+    def test_graph_confirms_target_only_after_producing_a_frame(self):
+        policy = self.graph["policy"]
+        plugins = next((folder for folder in (ROOT / "lib", ROOT / "target/release")
+                        if all((folder / name).is_file() for name in policy.PLUGIN_NAMES)), None)
+        if plugins is None:
+            self.skipTest("Requires built interpolation plugins")
+        payload = policy.encode_payload({"schema": 1, "plugins": str(plugins),
+                                         "settings": {"backend": "cpu"}, "fps": "48", "attempt": 3})
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"OPEN_SVPFLOW_GRAPH_DIR": directory}):
+            report = Path(directory) / "graph-3.json"
+            output = self.graph["bootstrap"](self.source(vs.YUV420P8), 24, 60, payload)
+            self.assertFalse(report.exists())
+            with output.get_frame(0):
+                self.assertEqual(json.loads(report.read_text()), {"target_fps": 48.0})
 
     def test_source_size_is_preserved_without_a_fixed_processing_canvas(self):
         for width, height in ((320, 192), (1920, 1080), (3840, 2160)):

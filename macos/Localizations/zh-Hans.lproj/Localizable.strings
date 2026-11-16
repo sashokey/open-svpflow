@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "在“终端”中完成安装，然后返回此处重新检查。Homebrew 可能会更新所需的相关软件包。";
 "Conversion dithering" = "转换时的抖动方式";
 "Custom (%@)" = "自定义（%@）";
+"Custom" = "自定义";
 "Decoder Drops" = "解码丢帧";
 "Decrease grid step" = "缩小网格步长";
+"Default" = "默认";
 "Details" = "详细信息";
 "Disabled" = "已关闭";
 "Display Delays" = "显示延迟";
+"Display refresh rate is unavailable." = "无法获取显示器刷新率。";
 "Drop Movies Here" = "将影片拖到此处";
 "Duplicate frames removal" = "移除重复帧";
 "Error Diffusion" = "误差扩散";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "安装 mpv、VapourSynth 及与之匹配的 Python 运行环境。";
 "Install the external playback components before opening a movie." = "请先安装外部播放组件，再打开影片。";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "安装需要联网，并可能更新所需的相关 Homebrew 软件包。系统密码提示会显示在“终端”中。";
-"Interpolate when possible" = "条件允许时启用帧插值";
 "Interpolation" = "帧插值";
 "Interpolation On" = "已开启帧插值";
 "Keep Window Open" = "保持窗口打开";
@@ -122,8 +124,6 @@
 "Open File…" = "打开文件…";
 "Opening Movie…" = "正在打开影片…";
 "Ordered" = "有序抖动";
-"Original" = "原始帧率";
-"Original Playback" = "原始帧率播放";
 "Output Drops" = "输出丢帧";
 "Paused" = "已暂停";
 "Pixel" = "整像素";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "无法继续播放。";
 "Playback dependencies are unavailable" = "播放依赖项不可用";
 "Playback details are unavailable." = "暂无播放详细信息。";
-"Playback mode" = "播放模式";
 "Playing" = "播放中";
 "Preparing Playback" = "正在准备播放";
 "Preserve source depth" = "保持源视频的位深";
+"Preset" = "预设";
 "Processing of scene changes" = "场景切换处理";
 "Processing threads" = "处理线程数";
 "Quality monitoring resumes with playback." = "继续播放后将恢复检测。";
@@ -148,7 +148,6 @@
 "Repeat frame" = "重复上一帧";
 "Repeated playback issues detected." = "多次检测到播放问题。";
 "Replace Playlist" = "替换播放列表";
-"Require interpolation" = "必须启用帧插值";
 "Retry" = "重试";
 "SVP shader" = "SVP 着色器";
 "Saving…" = "正在保存…";
@@ -167,6 +166,7 @@
 "Small" = "小";
 "Small and fast" = "小范围快速搜索";
 "Smooth playback with your installed mpv." = "使用已安装的 mpv 流畅播放。";
+"Smooth" = "流畅";
 "Some playback components need attention." = "部分播放组件需要处理。";
 "Source ×2" = "源帧率 ×2";
 "Source ×2.5" = "源帧率 ×2.5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "安装说明缺失。请下载完整的 App 安装包。";
 "The external mpv executable is unavailable" = "外部 mpv 可执行文件不可用";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "固定影片预设为本 App 自有预设，未复原 SVP Manager 的通用出厂预设或自动配置。参数映射基于 SVPflow API 文档和对生成器实际行为的分析。";
+"The interpolation filter could not process this video." = "插帧滤镜无法处理此视频。";
 "The interpolation filter failed or was disabled" = "帧插值滤镜发生故障或已关闭";
 "The matching VSScript library is unavailable." = "无法使用匹配的 VSScript 库。";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "匹配的原生 VapourSynth API 4 环境未能加载两个插件。";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "播放会话已结束";
 "The playback session is busy; try again shortly" = "播放会话正忙，请稍后重试";
 "The selected source did not produce a video frame" = "所选来源未能输出视频帧";
+"The selected source did not produce an interpolated video frame." = "所选来源未生成插帧后的视频帧。";
 "The settings could not be saved." = "无法保存设置。";
 "The settings description is missing." = "设置说明缺失。";
 "The settings document is missing." = "设置文档缺失。";
+"The target frame rate exceeds native timing limits." = "目标帧率超出了插帧时序限制。";
+"The target frame rate must be higher than the video's frame rate." = "目标帧率必须高于视频帧率。";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "视频帧率高于显示器刷新率。请尝试降低目标帧率。";
+"The video reports an invalid or unsupported frame rate." = "视频帧率无效或不受支持。";
 "This setting could not be changed." = "无法更改此设置。";
 "Try a lower target frame rate or lighter interpolation settings." = "试试降低目标帧率，或使用负载更低的帧插值设置。";
 "Unable to Continue" = "无法继续";
+"Unable to Interpolate" = "无法插帧";
 "Unable to Save Settings" = "无法保存设置";
 "Unable to start the playback session; see session.log" = "无法启动播放会话，请查看 session.log";
 "Unable to verify the external playback components." = "无法验证外部播放组件。";

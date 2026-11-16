@@ -69,7 +69,6 @@ def main(arguments=None):
     parser.add_argument("--plugin-dir", type=Path)
     parser.add_argument("--vsscript", type=Path)
     parser.add_argument("--settings", type=Path)
-    parser.add_argument("--profile", choices=("auto", "smooth", "original"))
     parser.add_argument("--fps")
     parser.add_argument("--bits", choices=("8", "10", "16", "source"))
     parser.add_argument("--backend", choices=("gpu", "cpu"))
@@ -83,7 +82,7 @@ def main(arguments=None):
         plugins = options.plugin_dir
         if plugins is None:
             plugins = plugin_directory(root)
-        profile, fps = options.profile or "auto", options.fps or "auto"
+        fps = options.fps or "auto"
         if options.settings is None:
             settings = validate_settings({})
         else:
@@ -93,13 +92,12 @@ def main(arguments=None):
                 from settings_api import load_document, playback_settings, rate_argument
                 document = load_document(options.settings)
                 settings = playback_settings(document)
-                profile = options.profile or document["playback"]["profile"]
                 fps = options.fps or rate_argument(document)
         if options.bits is not None:
             settings["output_bits"] = "source" if options.bits == "source" else int(options.bits)
         if options.backend is not None:
             settings["backend"] = options.backend
-        commands = [build_command(options.mpv, movie, root / "player" / "graph.vpy", plugins, settings, profile, fps, options.mpv_option, options.start, options.duration) for movie in options.movie]
+        commands = [build_command(options.mpv, movie, root / "player" / "graph.vpy", plugins, settings, fps, options.mpv_option, options.start, options.duration) for movie in options.movie]
         command = commands[0] + [value[-1] for value in commands[1:]]
         executable = shutil.which(command[0])
         if executable is None:
@@ -108,11 +106,10 @@ def main(arguments=None):
         compatibility = root / "player" / "compat.lua"
         if not compatibility.is_file():
             raise ValueError("The player compatibility script is unavailable")
-        command.insert(1, "--script=" + str(compatibility))
-        if profile == "original":
-            return subprocess.run(command, env=dict(os.environ)).returncode
+        command.insert(len(commands[0]) - 2, "--script=" + str(compatibility))
         with tempfile.TemporaryDirectory(prefix="open-svpflow-vs-") as config_root:
             environment = runtime_environment(options.vsscript, config_root=config_root)
+            environment["OPEN_SVPFLOW_GRAPH_DIR"] = config_root
             return subprocess.run(command, env=environment).returncode
     except (OSError, ValueError) as error:
         parser.error(str(error))

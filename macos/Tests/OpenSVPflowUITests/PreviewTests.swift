@@ -20,6 +20,7 @@ import Testing
     let description = try await client.call("describe")
     let settings = try #require(description["description"])
     model.document = try #require(settings["defaults"])
+    model.settingsDefaults = model.document
     model.descriptors = try settings["fields"]?.array.map(SettingDescriptor.init) ?? []
     model.limitations = settings["limitations"]?.array.compactMap(\.string) ?? []
     for (name, scheme) in [("light", ColorScheme.light), ("dark", ColorScheme.dark)] {

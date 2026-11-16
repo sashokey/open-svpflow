@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Selesaikan penginstalan di Terminal, lalu kembali ke sini untuk memeriksa ulang. Homebrew mungkin memperbarui paket terkait yang diperlukan.";
 "Conversion dithering" = "Dithering saat konversi";
 "Custom (%@)" = "Khusus (%@)";
+"Custom" = "Kustom";
 "Decoder Drops" = "Bingkai Terlewat Saat Dekode";
 "Decrease grid step" = "Kurangi langkah kisi";
+"Default" = "Bawaan";
 "Details" = "Detail";
 "Disabled" = "Dinonaktifkan";
 "Display Delays" = "Keterlambatan Tampilan";
+"Display refresh rate is unavailable." = "Laju penyegaran layar tidak tersedia.";
 "Drop Movies Here" = "Seret Film ke Sini";
 "Duplicate frames removal" = "Penghapusan bingkai duplikat";
 "Error Diffusion" = "Difusi Galat";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "Instal mpv dan VapourSynth beserta versi Python yang sesuai.";
 "Install the external playback components before opening a movie." = "Instal komponen pemutaran eksternal sebelum membuka film.";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "Penginstalan menggunakan internet dan mungkin memperbarui paket Homebrew terkait yang diperlukan. Permintaan kata sandi sistem muncul di Terminal.";
-"Interpolate when possible" = "Interpolasi jika memungkinkan";
 "Interpolation" = "Interpolasi";
 "Interpolation On" = "Interpolasi Aktif";
 "Keep Window Open" = "Biarkan Jendela Terbuka";
@@ -122,8 +124,6 @@
 "Open File…" = "Buka File…";
 "Opening Movie…" = "Membuka Film…";
 "Ordered" = "Terurut";
-"Original" = "Asli";
-"Original Playback" = "Pemutaran Asli";
 "Output Drops" = "Bingkai Terlewat Saat Ditampilkan";
 "Paused" = "Dijeda";
 "Pixel" = "Piksel";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "Pemutaran tidak dapat dilanjutkan.";
 "Playback dependencies are unavailable" = "Dependensi pemutaran tidak tersedia";
 "Playback details are unavailable." = "Detail pemutaran tidak tersedia.";
-"Playback mode" = "Mode pemutaran";
 "Playing" = "Memutar";
 "Preparing Playback" = "Menyiapkan Pemutaran";
 "Preserve source depth" = "Pertahankan kedalaman bit sumber";
+"Preset" = "Prasetel";
 "Processing of scene changes" = "Penanganan pergantian adegan";
 "Processing threads" = "Utas pemrosesan";
 "Quality monitoring resumes with playback." = "Pemantauan kualitas dilanjutkan saat video diputar kembali.";
@@ -148,7 +148,6 @@
 "Repeat frame" = "Ulangi bingkai";
 "Repeated playback issues detected." = "Masalah pemutaran terjadi berulang kali.";
 "Replace Playlist" = "Ganti Daftar Putar";
-"Require interpolation" = "Wajibkan interpolasi";
 "Retry" = "Coba Lagi";
 "SVP shader" = "Shader SVP";
 "Saving…" = "Menyimpan…";
@@ -167,6 +166,7 @@
 "Small" = "Kecil";
 "Small and fast" = "Kecil dan cepat";
 "Smooth playback with your installed mpv." = "Pemutaran lancar dengan mpv yang terpasang.";
+"Smooth" = "Halus";
 "Some playback components need attention." = "Beberapa komponen pemutaran perlu diperiksa.";
 "Source ×2" = "Sumber ×2";
 "Source ×2.5" = "Sumber ×2,5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "Petunjuk penginstalan tidak disertakan. Unduh paket app yang lengkap.";
 "The external mpv executable is unavailable" = "Program mpv eksternal tidak tersedia";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "Prasetel film tetap ini merupakan prasetel app. Profil bawaan universal atau profil Otomatis dari SVP Manager tidak direkonstruksi. Pemetaan parameter mengikuti dokumentasi API SVPflow dan perilaku generator yang telah diperiksa.";
+"The interpolation filter could not process this video." = "Filter interpolasi tidak dapat memproses video ini.";
 "The interpolation filter failed or was disabled" = "Filter interpolasi gagal atau dinonaktifkan";
 "The matching VSScript library is unavailable." = "Pustaka VSScript yang sesuai tidak tersedia.";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "Lingkungan native VapourSynth API 4 yang sesuai tidak dapat memuat kedua plugin.";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "Sesi pemutaran telah berakhir";
 "The playback session is busy; try again shortly" = "Sesi pemutaran sedang sibuk. Coba lagi sebentar lagi";
 "The selected source did not produce a video frame" = "Sumber yang dipilih tidak menghasilkan bingkai video";
+"The selected source did not produce an interpolated video frame." = "Sumber yang dipilih tidak menghasilkan bingkai video hasil interpolasi.";
 "The settings could not be saved." = "Pengaturan tidak dapat disimpan.";
 "The settings description is missing." = "Deskripsi pengaturan tidak ditemukan.";
 "The settings document is missing." = "Dokumen pengaturan tidak ditemukan.";
+"The target frame rate exceeds native timing limits." = "Laju bingkai target melebihi batas waktu interpolasi.";
+"The target frame rate must be higher than the video's frame rate." = "Laju bingkai target harus lebih tinggi daripada laju bingkai video.";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "Laju bingkai video melebihi laju penyegaran layar. Coba turunkan target laju bingkai.";
+"The video reports an invalid or unsupported frame rate." = "Laju bingkai video tidak valid atau tidak didukung.";
 "This setting could not be changed." = "Pengaturan ini tidak dapat diubah.";
 "Try a lower target frame rate or lighter interpolation settings." = "Coba turunkan target laju bingkai atau gunakan pengaturan interpolasi yang lebih ringan.";
 "Unable to Continue" = "Tidak Dapat Melanjutkan";
+"Unable to Interpolate" = "Interpolasi Tidak Dapat Dilakukan";
 "Unable to Save Settings" = "Tidak Dapat Menyimpan Pengaturan";
 "Unable to start the playback session; see session.log" = "Sesi pemutaran tidak dapat dimulai. Lihat session.log";
 "Unable to verify the external playback components." = "Komponen pemutaran eksternal tidak dapat diverifikasi.";

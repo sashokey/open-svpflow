@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import tempfile
 
 
 DEFAULT_SETTINGS = {
@@ -161,40 +162,26 @@ def native_timing(source, target):
     return 1 < ratio <= NATIVE_INT_MAX // 256 and ratio.denominator <= NATIVE_INT_MAX
 
 
-def select_rate(source, display, profile="auto", explicit="auto"):
-    need(profile in ("auto", "smooth", "original"), "Unsupported playback profile")
+def select_rate(source, display, explicit="auto"):
     source = source_rate(source)
-    if profile == "original":
-        return None
     if type(explicit) is str and explicit.startswith("source*"):
-        multiplier = target_rate(explicit[7:])
-        target = target_rate(source * multiplier)
-        need(native_timing(source, target), "Target must exceed the source and fit native phase timing")
-        return target
-    divisor = 1
-    if explicit in ("monitor/2", "monitor/3"):
-        divisor = int(explicit[-1])
-        explicit = "auto"
-    if explicit not in (None, "auto"):
+        target = target_rate(source * target_rate(explicit[7:]))
+    elif explicit not in (None, "auto", "monitor/2", "monitor/3"):
         target = target_rate(explicit)
-        need(native_timing(source, target), "Target must exceed the source and fit native phase timing")
-        return target
-    try:
-        hz = float(display)
-    except (TypeError, ValueError, OverflowError):
-        hz = 0
-    if not math.isfinite(hz) or hz <= 0:
-        need(profile == "auto", "Display refresh is unavailable; pass --fps explicitly")
-        return None
-    hz /= divisor
-    if hz <= source or hz > NATIVE_INT_MAX:
-        need(profile == "auto", "Display refresh cannot support the interpolation target")
-        return None
-    denominator_limit = min(1001000, NATIVE_INT_MAX // source.numerator, NATIVE_INT_MAX // math.ceil(hz))
-    target = Fraction(str(hz)).limit_denominator(denominator_limit)
-    if not native_timing(source, target):
-        need(profile == "auto", "Display refresh cannot support the interpolation target")
-        return None
+    else:
+        try:
+            hz = float(display)
+        except (TypeError, ValueError, OverflowError):
+            hz = 0
+        need(math.isfinite(hz) and hz > 0, "Display refresh rate is unavailable.")
+        if explicit in ("monitor/2", "monitor/3"):
+            hz /= int(explicit[-1])
+        need(hz > source, "The target frame rate must be higher than the video's frame rate.")
+        need(hz <= NATIVE_INT_MAX, "The target frame rate exceeds native timing limits.")
+        denominator_limit = min(1001000, NATIVE_INT_MAX // source.numerator, NATIVE_INT_MAX // math.ceil(hz))
+        target = Fraction(str(hz)).limit_denominator(denominator_limit)
+    need(target > source, "The target frame rate must be higher than the video's frame rate.")
+    need(native_timing(source, target), "The target frame rate exceeds native timing limits.")
     return target
 
 
@@ -311,17 +298,44 @@ def encode_payload(value):
 def decode_payload(value):
     need(type(value) is str and 0 < len(value) <= 131072, "Invalid graph settings payload")
     data = json.loads(base64.b64decode(value.encode("ascii"), altchars=b"-_", validate=True))
-    closed(data, ("schema", "plugins", "settings", "profile", "fps"), "graph payload")
+    need(type(data) is dict, "Invalid graph payload")
+    data.pop("profile", None)
+    fields = ("schema", "plugins", "settings", "fps")
+    if "attempt" in data:
+        bounded_int(data["attempt"], 1, NATIVE_INT_MAX, "playback attempt")
+        fields += ("attempt",)
+    closed(data, fields, "graph payload")
     need(type(data["schema"]) is int and data["schema"] == 1, "Unsupported graph settings payload")
     data["settings"] = validate_settings(data["settings"])
-    need(data["profile"] in ("auto", "smooth"), "Unsupported graph profile")
     need(type(data["plugins"]) is str and type(data["fps"]) is str, "Invalid graph paths or rate")
     return data
 
 
-def build_command(mpv, movie, graph, plugins, settings, profile="auto", fps="auto", extra=(), start=None, duration=None):
+def graph_attempt(attempt):
+    directory = os.environ.get("OPEN_SVPFLOW_GRAPH_DIR")
+    if attempt is None and directory is not None:
+        attempt = int((Path(directory) / "cli-attempt").read_text())
+        bounded_int(attempt, 1, NATIVE_INT_MAX, "playback attempt")
+    return attempt
+
+
+def write_graph_report(attempt, result):
+    directory = os.environ.get("OPEN_SVPFLOW_GRAPH_DIR")
+    if directory is None or attempt is None:
+        return
+    path = Path(directory) / f"graph-{attempt}.json"
+    with tempfile.NamedTemporaryFile(dir=path.parent, mode="w", encoding="utf-8", delete=False) as stream:
+        temporary = Path(stream.name)
+        try:
+            json.dump(result, stream, allow_nan=False)
+            stream.flush()
+            os.replace(temporary, path)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def build_command(mpv, movie, graph, plugins, settings, fps="auto", extra=(), start=None, duration=None, *, attempt=None):
     need(type(mpv) is str and mpv, "External mpv executable is required")
-    need(profile in ("auto", "smooth", "original"), "Unsupported playback profile")
     text = str(movie)
     need(text and not any(ord(char) < 32 for char in text), "A movie source without control characters is required")
     media = text
@@ -329,24 +343,24 @@ def build_command(mpv, movie, graph, plugins, settings, profile="auto", fps="aut
         media = Path(text).expanduser().resolve()
         need(media.is_file(), "A readable local movie file is required")
     settings = validate_settings(settings)
-    argv = [mpv]
-    wrapper_filter = None
-    if profile != "original":
-        argv.append("--hr-seek-framedrop=no")
-        plugins = plugin_paths(plugins)[0].parent
-        graph = Path(graph).resolve()
-        need(graph.is_file(), "VapourSynth graph is unavailable")
-        if fps != "auto" and fps not in ("monitor/2", "monitor/3") and not str(fps).startswith("source*"):
-            target_rate(fps)
-        token = encode_payload({"schema": 1, "plugins": str(plugins), "settings": settings, "profile": profile, "fps": str(fps)})
-        filename = str(graph)
-        quoted = "%" + str(len(filename.encode("utf-8"))) + "%" + filename
-        quoted_token = "%" + str(len(token)) + "%" + token
-        formats = "|".join("yuv" + chroma + "p" + depth for chroma in ("420", "422", "444") for depth in ("", "9le", "10le", "12le", "14le", "16le"))
-        matrices = "bt709|bt2020nc|bt2020c|smpte170m|bt470bg|smpte240m|fcc|ycgco|ictcp"
-        normalizer = "@svp-input:lavfi=[scale=w=iw:h=ih,format=pix_fmts=" + formats + ":color_spaces=" + matrices + ":color_ranges=tv|pc]"
-        buffer_options = "".join(":" + option.replace("_", "-") + "=" + str(settings[option]) for option in ("buffered_frames", "concurrent_frames") if settings[option] != "auto")
-        wrapper_filter = "--vf-add=" + normalizer + ",vapoursynth=file=" + quoted + buffer_options + ":user-data=" + quoted_token
+    argv = [mpv, "--hr-seek-framedrop=no"]
+    plugins = plugin_paths(plugins)[0].parent
+    graph = Path(graph).resolve()
+    need(graph.is_file(), "VapourSynth graph is unavailable")
+    if fps != "auto" and fps not in ("monitor/2", "monitor/3") and not str(fps).startswith("source*"):
+        target_rate(fps)
+    payload = {"schema": 1, "plugins": str(plugins), "settings": settings, "fps": str(fps)}
+    if attempt is not None:
+        payload["attempt"] = attempt
+    token = encode_payload(payload)
+    filename = str(graph)
+    quoted = "%" + str(len(filename.encode("utf-8"))) + "%" + filename
+    quoted_token = "%" + str(len(token)) + "%" + token
+    formats = "|".join("yuv" + chroma + "p" + depth for chroma in ("420", "422", "444") for depth in ("", "9le", "10le", "12le", "14le", "16le"))
+    matrices = "bt709|bt2020nc|bt2020c|smpte170m|bt470bg|smpte240m|fcc|ycgco|ictcp"
+    normalizer = "@svp-input:lavfi=[scale=w=iw:h=ih,format=pix_fmts=" + formats + ":color_spaces=" + matrices + ":color_ranges=tv|pc]"
+    buffer_options = "".join(":" + option.replace("_", "-") + "=" + str(settings[option]) for option in ("buffered_frames", "concurrent_frames") if settings[option] != "auto")
+    wrapper_filter = "--vf-add=" + normalizer + ",@svp-interpolate:vapoursynth=file=" + quoted + buffer_options + ":user-data=" + quoted_token
     for value, name in ((start, "start"), (duration, "length")):
         if value is not None:
             need(type(value) in (int, float) and math.isfinite(value) and value >= 0 and (name != "length" or value > 0), "Invalid playback time bound")
@@ -355,7 +369,6 @@ def build_command(mpv, movie, graph, plugins, settings, profile="auto", fps="aut
     need(all(type(arg) is str and arg.startswith("--") and not any(ord(char) < 32 for char in arg) for arg in extra), "Extra mpv options must begin with --")
     insertion = max((index + 1 for index, arg in enumerate(extra) if arg.startswith("--vf=")), default=0)
     argv.extend(extra[:insertion])
-    if wrapper_filter is not None:
-        argv.append(wrapper_filter)
+    argv.append(wrapper_filter)
     argv.extend(extra[insertion:])
     return argv + ["--", str(media)]

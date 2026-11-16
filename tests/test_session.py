@@ -168,13 +168,17 @@ class WorkerTests(unittest.TestCase):
         first = next(command[2] for command in commands if command[:2] == ["vf", "add"])
         self.assertIn("@svp-interpolate:vapoursynth=", first)
         self.assertNotIn(["vf", "remove", "@user-filter"], commands)
-        document["playback"]["profile"] = "original"
+        document["playback"].update(rate="fixed", fps="72")
         before = list(commands)
         settings_api.save_document(owner.state_dir / "settings.json", document)
         self.assertEqual(commands, before)
         owner.configure_file()
-        self.assertFalse(owner.filter_required)
-        self.assertEqual(commands[len(before):], [["vf", "remove", "@svp-input"], ["vf", "remove", "@svp-interpolate"]])
+        updated = commands[len(before):]
+        self.assertEqual(updated[:2], [["vf", "remove", "@svp-input"], ["vf", "remove", "@svp-interpolate"]])
+        self.assertNotIn(["vf", "remove", "@user-filter"], updated)
+        second = next(command[2] for command in updated if command[:2] == ["vf", "add"])
+        self.assertNotEqual(second, first)
+        self.assertEqual(owner.graph_attempt, 2)
 
     def test_playback_log_cannot_overwrite_a_symlink_target(self):
         target = self.root / "preserved.txt"
@@ -196,11 +200,41 @@ class WorkerTests(unittest.TestCase):
                 return None
         owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
         owner.client = Client()
-        owner.filter_required = True
         owner.process_event({"event": "playback-restart"})
         self.assertFalse(owner.active)
         self.assertIn("interpolation", owner.error.lower())
         self.assertTrue(owner.ready.is_set())
+
+    def test_active_filter_label_and_video_are_insufficient_without_graph_confirmation(self):
+        commands = []
+        class Client:
+            def get(self, name, default=None):
+                return {
+                    "vf": [{"name": "vapoursynth", "label": "svp-interpolate", "enabled": True}],
+                    "video-out-params": {"w": 320, "h": 192},
+                }.get(name, default)
+            def command(self, command, **kwargs):
+                commands.append(command)
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
+        owner.client = Client()
+        owner.process_event({"event": "playback-restart"})
+        self.assertFalse(owner.active)
+        self.assertEqual(owner.snapshot()["status"], "error")
+        self.assertIn(["quit"], commands)
+
+    def test_persisting_the_failure_cannot_prevent_mpv_shutdown(self):
+        commands = []
+        class Client:
+            def command(self, command, **kwargs):
+                commands.append(command)
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
+        owner.client = Client()
+        (owner.state_dir / "event.json").symlink_to(self.root / "unavailable")
+        owner.fail("The interpolation filter failed")
+        self.assertEqual(owner.snapshot()["message"], "The interpolation filter failed")
+        self.assertTrue(owner.stopped.is_set())
+        self.assertTrue(owner.ready.is_set())
+        self.assertEqual(commands, [["quit"]])
 
     def test_normal_mpv_shutdown_does_not_reopen_the_gui(self):
         notified = []
@@ -283,18 +317,18 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(reset["quality"], "checking")
         self.assertIsNone(reset["output_drops"])
 
-    def test_playback_metadata_distinguishes_confirmed_target_from_auto_passthrough(self):
+    def test_playback_metadata_distinguishes_confirmed_target_from_unverified_samples(self):
         owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
         owner.active = True
         owner.quality = session.PlaybackQuality("/tmp/Part #1?.mkv", "auto")
         initial = owner.snapshot()["playback"]
         self.assertEqual(initial["title"], "Part #1?.mkv")
         self.assertIsNone(initial["interpolation"])
-        passthrough = self.report_playback(owner, 0, refresh=None, filtered_fps=24.0)
-        self.assertIs(passthrough["interpolation"], False)
-        self.assertIsNone(passthrough["target_fps"])
+        unverified = self.report_playback(owner, 0, refresh=None, filtered_fps=24.0)
+        self.assertIsNone(unverified["interpolation"])
+        self.assertIsNone(unverified["target_fps"])
 
-        owner.quality = session.PlaybackQuality("Movie title", "smooth", "48")
+        owner.quality = session.PlaybackQuality("Movie title", "48")
         confirmed = self.report_playback(owner, 1, filtered_fps=47.98)
         self.assertIs(confirmed["interpolation"], True)
         self.assertEqual(confirmed["target_fps"], 48)
@@ -309,20 +343,6 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(owner.active)
         self.assertIn("control channel", owner.error)
         self.assertEqual(notified, [self.root])
-
-    def test_original_playback_can_start_without_an_interpolation_filter(self):
-        class Client:
-            def get(self, name, default=None):
-                return [] if name == "vf" else {"w": 320, "h": 180}
-            def command(self, command, **kwargs):
-                return None
-        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
-        owner.client = Client()
-        owner.filter_required = False
-        owner.process_event({"event": "playback-restart"})
-        self.assertTrue(owner.active)
-        self.assertTrue(owner.ready.is_set())
-        self.assertEqual(owner.snapshot()["status"], "started")
 
     def test_native_subtitle_drop_does_not_mutate_playlist(self):
         commands = []
@@ -340,13 +360,14 @@ class WorkerTests(unittest.TestCase):
         import time
         class Client:
             def get(self, name, default=None):
-                return {"w": 320} if name == "video-out-params" else []
+                return {"video-out-params": {"w": 320}, "vf": [{"label": "svp-interpolate", "name": "vapoursynth"}]}.get(name, default)
             def command(self, command, **kwargs):
-                return None
+                return {"playlist_entry_id": 2} if command[0] == "loadfile" else None
         owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
         owner.client = Client()
-        owner.filter_required = False
+        session.atomic_json(owner.runtime_dir / "graph-0.json", {"target_fps": 48})
         owner.active = True
+        owner.process_event({"event": "start-file", "playlist_entry_id": 1})
         owner.ready.set()
         owner._document = lambda: {"preferences": {"after_start": "quit_app", "new_files": "append"}}
         movie = self.root / "replacement.mkv"
@@ -357,8 +378,13 @@ class WorkerTests(unittest.TestCase):
         time.sleep(0.05)
         waiting = thread.is_alive()
         owner.process_event({"event": "playback-restart"})
+        thread.join(0.1)
+        ignored_old_restart = thread.is_alive()
+        owner.process_event({"event": "start-file", "playlist_entry_id": 2})
+        owner.process_event({"event": "playback-restart"})
         thread.join(2)
         self.assertTrue(waiting, "Replacement was reported ready before its first frame")
+        self.assertTrue(ignored_old_restart, "Playback restart of the previous file confirmed the replacement")
         self.assertFalse(thread.is_alive())
         self.assertEqual(results[0]["status"], "started")
 

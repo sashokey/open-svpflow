@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Terminez l’installation dans Terminal, puis revenez ici pour relancer la vérification. Homebrew peut mettre à jour les paquets associés nécessaires.";
 "Conversion dithering" = "Tramage de conversion";
 "Custom (%@)" = "Personnalisé (%@)";
+"Custom" = "Personnalisé";
 "Decoder Drops" = "Images ignorées au décodage";
 "Decrease grid step" = "Réduction du pas de grille";
+"Default" = "Par défaut";
 "Details" = "Détails";
 "Disabled" = "Désactivé";
 "Display Delays" = "Retards d’affichage";
+"Display refresh rate is unavailable." = "La fréquence de rafraîchissement de l’écran est indisponible.";
 "Drop Movies Here" = "Déposez des films ici";
 "Duplicate frames removal" = "Suppression des images en double";
 "Error Diffusion" = "Diffusion d’erreur";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "Installez mpv et VapourSynth avec la version de Python correspondante.";
 "Install the external playback components before opening a movie." = "Installez les composants de lecture externes avant d’ouvrir un film.";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "L’installation utilise Internet et peut mettre à jour les paquets Homebrew associés nécessaires. Terminal vous demandera le mot de passe système si nécessaire.";
-"Interpolate when possible" = "Interpoler si possible";
 "Interpolation" = "Interpolation";
 "Interpolation On" = "Interpolation activée";
 "Keep Window Open" = "Laisser la fenêtre ouverte";
@@ -122,8 +124,6 @@
 "Open File…" = "Ouvrir un fichier…";
 "Opening Movie…" = "Ouverture du film…";
 "Ordered" = "Ordonné";
-"Original" = "Original";
-"Original Playback" = "Lecture à la cadence d’origine";
 "Output Drops" = "Images ignorées à l’affichage";
 "Paused" = "En pause";
 "Pixel" = "Pixel";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "La lecture s’est interrompue.";
 "Playback dependencies are unavailable" = "Les dépendances de lecture sont indisponibles.";
 "Playback details are unavailable." = "Les détails de lecture sont indisponibles.";
-"Playback mode" = "Mode de lecture";
 "Playing" = "Lecture en cours";
 "Preparing Playback" = "Préparation de la lecture";
 "Preserve source depth" = "Conserver la profondeur de la source";
+"Preset" = "Préréglage";
 "Processing of scene changes" = "Traitement des changements de scène";
 "Processing threads" = "Fils d’exécution";
 "Quality monitoring resumes with playback." = "Le suivi de la qualité reprend avec la lecture.";
@@ -148,7 +148,6 @@
 "Repeat frame" = "Répéter l’image";
 "Repeated playback issues detected." = "Des problèmes de lecture répétés ont été détectés.";
 "Replace Playlist" = "Remplacer la liste de lecture";
-"Require interpolation" = "Exiger l’interpolation";
 "Retry" = "Réessayer";
 "SVP shader" = "Shader SVP";
 "Saving…" = "Enregistrement…";
@@ -167,6 +166,7 @@
 "Small" = "Petit";
 "Small and fast" = "Petit et rapide";
 "Smooth playback with your installed mpv." = "Lecture fluide avec mpv déjà installé.";
+"Smooth" = "Fluide";
 "Some playback components need attention." = "Certains composants de lecture nécessitent votre attention.";
 "Source ×2" = "Source ×2";
 "Source ×2.5" = "Source ×2,5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "Les instructions d’installation sont manquantes. Téléchargez une version complète de l’app.";
 "The external mpv executable is unavailable" = "L’exécutable externe de mpv est indisponible.";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "Le préréglage fixe pour les films est propre à cette app. Il ne reprend pas de profil universel par défaut ni le profil automatique de SVP Manager. Les paramètres suivent l’API documentée de SVPflow et le comportement observé du générateur.";
+"The interpolation filter could not process this video." = "Le filtre d’interpolation n’a pas pu traiter cette vidéo.";
 "The interpolation filter failed or was disabled" = "Le filtre d’interpolation a échoué ou a été désactivé.";
 "The matching VSScript library is unavailable." = "La bibliothèque VSScript correspondante est indisponible.";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "L’environnement natif correspondant de VapourSynth API 4 n’a pas pu charger les deux modules.";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "La session de lecture est terminée.";
 "The playback session is busy; try again shortly" = "La session de lecture est occupée. Réessayez dans un instant.";
 "The selected source did not produce a video frame" = "La source sélectionnée n’a produit aucune image vidéo.";
+"The selected source did not produce an interpolated video frame." = "La source sélectionnée n’a fourni aucune image interpolée.";
 "The settings could not be saved." = "Les réglages n’ont pas pu être enregistrés.";
 "The settings description is missing." = "Il manque la description des réglages.";
 "The settings document is missing." = "Il manque le fichier des réglages.";
+"The target frame rate exceeds native timing limits." = "La fréquence d’images cible dépasse les limites de l’interpolation.";
+"The target frame rate must be higher than the video's frame rate." = "La fréquence d’images cible doit être supérieure à celle de la vidéo.";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "La cadence vidéo dépasse la fréquence de rafraîchissement de l’écran. Essayez une cadence cible plus basse.";
+"The video reports an invalid or unsupported frame rate." = "La fréquence d’images de la vidéo est invalide ou non prise en charge.";
 "This setting could not be changed." = "Ce réglage n’a pas pu être modifié.";
 "Try a lower target frame rate or lighter interpolation settings." = "Essayez une cadence cible plus basse ou des réglages d’interpolation moins exigeants.";
 "Unable to Continue" = "Impossible de continuer";
+"Unable to Interpolate" = "Interpolation impossible";
 "Unable to Save Settings" = "Impossible d’enregistrer les réglages";
 "Unable to start the playback session; see session.log" = "Impossible de démarrer la session de lecture. Consultez session.log.";
 "Unable to verify the external playback components." = "Impossible de vérifier les composants de lecture externes.";

@@ -70,11 +70,14 @@
 "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages." = "Complete the installation in Terminal, then return here to check again. Homebrew may update required related packages.";
 "Conversion dithering" = "Conversion dithering";
 "Custom (%@)" = "Custom (%@)";
+"Custom" = "Custom";
 "Decoder Drops" = "Decoder Drops";
 "Decrease grid step" = "Decrease grid step";
+"Default" = "Default";
 "Details" = "Details";
 "Disabled" = "Disabled";
 "Display Delays" = "Display Delays";
+"Display refresh rate is unavailable." = "Display refresh rate is unavailable.";
 "Drop Movies Here" = "Drop Movies Here";
 "Duplicate frames removal" = "Duplicate frames removal";
 "Error Diffusion" = "Error Diffusion";
@@ -95,7 +98,6 @@
 "Install mpv and VapourSynth with their matching Python runtime." = "Install mpv and VapourSynth with their matching Python runtime.";
 "Install the external playback components before opening a movie." = "Install the external playback components before opening a movie.";
 "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal." = "Installation uses the internet and may update required related Homebrew packages. System password prompts appear in Terminal.";
-"Interpolate when possible" = "Interpolate when possible";
 "Interpolation" = "Interpolation";
 "Interpolation On" = "Interpolation On";
 "Keep Window Open" = "Keep Window Open";
@@ -122,8 +124,6 @@
 "Open File…" = "Open File…";
 "Opening Movie…" = "Opening Movie…";
 "Ordered" = "Ordered";
-"Original" = "Original";
-"Original Playback" = "Original Playback";
 "Output Drops" = "Output Drops";
 "Paused" = "Paused";
 "Pixel" = "Pixel";
@@ -132,10 +132,10 @@
 "Playback could not continue." = "Playback could not continue.";
 "Playback dependencies are unavailable" = "Playback dependencies are unavailable";
 "Playback details are unavailable." = "Playback details are unavailable.";
-"Playback mode" = "Playback mode";
 "Playing" = "Playing";
 "Preparing Playback" = "Preparing Playback";
 "Preserve source depth" = "Preserve source depth";
+"Preset" = "Preset";
 "Processing of scene changes" = "Processing of scene changes";
 "Processing threads" = "Processing threads";
 "Quality monitoring resumes with playback." = "Quality monitoring resumes with playback.";
@@ -148,7 +148,6 @@
 "Repeat frame" = "Repeat frame";
 "Repeated playback issues detected." = "Repeated playback issues detected.";
 "Replace Playlist" = "Replace Playlist";
-"Require interpolation" = "Require interpolation";
 "Retry" = "Retry";
 "SVP shader" = "SVP shader";
 "Saving…" = "Saving…";
@@ -167,6 +166,7 @@
 "Small" = "Small";
 "Small and fast" = "Small and fast";
 "Smooth playback with your installed mpv." = "Smooth playback with your installed mpv.";
+"Smooth" = "Smooth";
 "Some playback components need attention." = "Some playback components need attention.";
 "Source ×2" = "Source ×2";
 "Source ×2.5" = "Source ×2.5";
@@ -183,6 +183,7 @@
 "The bundled installation instructions are missing. Download a complete application package." = "The bundled installation instructions are missing. Download a complete application package.";
 "The external mpv executable is unavailable" = "The external mpv executable is unavailable";
 "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior." = "The fixed film preset is an application preset, not a recovered universal SVP Manager factory or Automatic profile. Parameter mappings follow the documented SVPflow API and inspected generator behavior.";
+"The interpolation filter could not process this video." = "The interpolation filter could not process this video.";
 "The interpolation filter failed or was disabled" = "The interpolation filter failed or was disabled";
 "The matching VSScript library is unavailable." = "The matching VSScript library is unavailable.";
 "The matching native VapourSynth API 4 environment could not load both plugins." = "The matching native VapourSynth API 4 environment could not load both plugins.";
@@ -197,13 +198,18 @@
 "The playback session has ended" = "The playback session has ended";
 "The playback session is busy; try again shortly" = "The playback session is busy; try again shortly";
 "The selected source did not produce a video frame" = "The selected source did not produce a video frame";
+"The selected source did not produce an interpolated video frame." = "The selected source did not produce an interpolated video frame.";
 "The settings could not be saved." = "The settings could not be saved.";
 "The settings description is missing." = "The settings description is missing.";
 "The settings document is missing." = "The settings document is missing.";
+"The target frame rate exceeds native timing limits." = "The target frame rate exceeds native timing limits.";
+"The target frame rate must be higher than the video's frame rate." = "The target frame rate must be higher than the video's frame rate.";
 "The video frame rate exceeds the display refresh rate. Try a lower target frame rate." = "The video frame rate exceeds the display refresh rate. Try a lower target frame rate.";
+"The video reports an invalid or unsupported frame rate." = "The video reports an invalid or unsupported frame rate.";
 "This setting could not be changed." = "This setting could not be changed.";
 "Try a lower target frame rate or lighter interpolation settings." = "Try a lower target frame rate or lighter interpolation settings.";
 "Unable to Continue" = "Unable to Continue";
+"Unable to Interpolate" = "Unable to Interpolate";
 "Unable to Save Settings" = "Unable to Save Settings";
 "Unable to start the playback session; see session.log" = "Unable to start the playback session; see session.log";
 "Unable to verify the external playback components." = "Unable to verify the external playback components.";
