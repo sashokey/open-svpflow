@@ -1,6 +1,6 @@
 {
-  "version": "0.1.3-mac.6",
+  "version": "0.1.3",
   "draft": false,
-  "prerelease": true,
-  "notes": "### Interface fixes\n\n- The main window fits its playback controls at the standard size. Settings keeps a consistent bottom inset when the window is resized.\n- Settings keeps its footer outside the scrolling area so advanced parameters and their help stay readable.\n- Two-column controls and a compact Now Playing card bring the layout in line with the reviewed design.\n- The README includes a screenshot of the macOS launcher.\n\nExtract the ZIP and open Open SVPflow.app on Apple Silicon with macOS 26 or later. Homebrew mpv, Python, and VapourSynth are external dependencies. The app and plugins are ad-hoc signed."
+  "prerelease": false,
+  "notes": "First stable macOS release of the fork, based on the tested v0.1.3-mac.6 application.\n\n- Native ARM64 interpolation plugins with a signed motion-vector decoding fix and a SwiftUI launcher for external mpv.\n- Drag and drop movies, manage a playback queue, and configure interpolation parameters and target frame rates. Playback continues in mpv when the launcher quits.\n- Now Playing shows the current movie, target frame rate, and recent playback quality. The interface is available in 13 languages.\n- The main window fits the default controls and keeps a consistent Settings inset. Advanced settings scroll independently of the footer.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. The launcher checks for Homebrew mpv 0.42+, Python, and VapourSynth. The app and plugins are ad-hoc signed and may require Gatekeeper approval. See the README for setup and compatibility details."
 }
