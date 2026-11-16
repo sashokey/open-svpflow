@@ -22,7 +22,7 @@ Open SVPflow brings motion-compensated frame interpolation to everyday movie pla
 
 - **Keep the fork focused.** Establish a reproducible issue before changing the engine. Put playback policy and compatibility handling in the launcher or graph when the issue originates there.
 - **Keep settings consistent.** Derive interface controls and defaults from the Python settings contract. Preserve existing settings-file semantics and apply interpolation changes at the next file boundary.
-- **Explain compatibility precisely.** Use the [SVPflow parameter documentation](https://www.svp-team.com/wiki/Manual:SVPflow) as a reference. Describe the preset and supported settings in terms of what this implementation does, and identify options it cannot reproduce.
+- **Explain compatibility precisely.** Use the SVPflow parameter documentation as a reference. Describe the preset and supported settings in terms of what this implementation does, and identify options it cannot reproduce.
 - **Preserve the playback boundary.** Use local Unix-domain IPC for session control. Keep the launcher free of internet requests, telemetry and automatic updates. Dependency installation starts at the user's request, and external mpv retains its own capabilities.
 - **Verify the behavior users see.** Measure interpolation throughput separately from decoding and display. For window changes, check the native app on an isolated runner, including restored window sizes and scrolling in long settings panes. Publish packages after the automated build and extracted-app checks pass.
 
