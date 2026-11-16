@@ -12,7 +12,7 @@ struct OpenSVPflowApp: App {
 
     var body: some Scene {
         Window("Open SVPflow", id: "main") {
-            MainView(model: delegate.model)
+            MainView(model: delegate.model, registerSettingsAction: delegate.registerSettingsAction)
                 .environment(\.locale, Locale.current)
                 .environment(\.layoutDirection, appLayoutDirection)
                 .onAppear { delegate.connectWindow() }
@@ -32,24 +32,6 @@ struct OpenSVPflowApp: App {
                 .environment(\.locale, Locale.current)
                 .environment(\.layoutDirection, appLayoutDirection)
         }
-
-        MenuBarExtra(isInserted: Binding(get: { delegate.model.menuBarInserted }, set: { delegate.model.menuBarInserted = $0 })) {
-            Button(AppText("Show Window")) { delegate.showMain() }
-            Button(AppText("Open File…")) { delegate.model.openPanel() }
-            SettingsLink { Text(AppText("Settings…")) }
-            Divider()
-            Button(AppText("Quit")) { NSApplication.shared.terminate(nil) }
-                .keyboardShortcut("q")
-        } label: {
-            Group {
-                if let icon = NSImage(named: "StatusIconTemplate") {
-                    Image(nsImage: icon)
-                } else {
-                    Image(systemName: "play.rectangle")
-                }
-            }
-            .accessibilityLabel("Open SVPflow")
-        }
     }
 }
 
@@ -57,6 +39,8 @@ struct OpenSVPflowApp: App {
 final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model = AppModel()
     private weak var mainWindow: NSWindow?
+    private var statusItem: NSStatusItem?
+    private var settingsAction: OpenSettingsAction?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         model.performEffect = { [weak self] effect in self?.apply(effect) }
@@ -78,7 +62,15 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMain()
         Task { await model.refreshStatus() }
-        return true
+        return false
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    func registerSettingsAction(_ action: OpenSettingsAction) {
+        settingsAction = action
     }
 
     func connectWindow() {
@@ -110,19 +102,78 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     }
 
     func showMain() {
-        NSApplication.shared.setActivationPolicy(model.menuBarInserted ? .accessory : .regular)
+        NSApplication.shared.setActivationPolicy(model.presentation.menuBarActive ? .accessory : .regular)
         connectWindow()
         mainWindow?.makeKeyAndOrderFront(nil)
         NSApplication.shared.activate(ignoringOtherApps: true)
+    }
+
+    private func showStatusItem() {
+        guard statusItem == nil else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        let icon = NSImage(named: "StatusIconTemplate")
+            ?? NSImage(systemSymbolName: "play.rectangle", accessibilityDescription: "Open SVPflow")
+        icon?.size = NSSize(width: 18, height: 18)
+        icon?.isTemplate = true
+        item.button?.image = icon
+        item.button?.setAccessibilityLabel("Open SVPflow")
+
+        let menu = NSMenu()
+        menu.addItem(statusMenuItem("Show Window", action: #selector(showStatusWindow)))
+        menu.addItem(statusMenuItem("Open File…", action: #selector(openStatusFile), keyEquivalent: "o"))
+        menu.addItem(statusMenuItem("Settings…", action: #selector(showStatusSettings), keyEquivalent: ","))
+        menu.addItem(.separator())
+        menu.addItem(statusMenuItem("Quit", action: #selector(quitFromStatusMenu), keyEquivalent: "q"))
+        item.menu = menu
+        statusItem = item
+    }
+
+    private func statusMenuItem(_ title: String, action: Selector, keyEquivalent: String = "") -> NSMenuItem {
+        let item = NSMenuItem(title: AppText(title), action: action, keyEquivalent: keyEquivalent)
+        item.target = self
+        return item
+    }
+
+    private func removeStatusItem() {
+        if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
+    }
+
+    @objc private func showStatusWindow() {
+        showMain()
+        Task { await model.refreshStatus() }
+    }
+
+    @objc private func openStatusFile() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        model.openPanel()
+    }
+
+    @objc private func showStatusSettings() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        if let settingsAction { settingsAction() }
+        else { showMain() }
+    }
+
+    @objc private func quitFromStatusMenu() {
+        NSApplication.shared.terminate(nil)
     }
 
     private func apply(_ effect: PresentationEffect) {
         switch effect {
         case .terminateGUI: NSApplication.shared.terminate(nil)
         case .showMenuBar:
-            for window in NSApplication.shared.windows { window.orderOut(nil) }
-            NSApplication.shared.setActivationPolicy(.accessory)
-        case .keepWindow: showMain()
+            let application = NSApplication.shared
+            let statusWindow = statusItem?.button?.window
+            let contentWindows = application.windows.filter { $0.isVisible && $0 !== statusWindow }
+            showStatusItem()
+            application.setActivationPolicy(.accessory)
+            for window in contentWindows { window.orderOut(nil) }
+        case .keepWindow:
+            removeStatusItem()
+            showMain()
         case .showError: showMain()
         case .hideWindow: mainWindow?.orderOut(nil)
         case .none: break
