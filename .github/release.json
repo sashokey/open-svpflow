@@ -2,5 +2,5 @@
   "version": "0.1.4",
   "draft": false,
   "prerelease": false,
-  "notes": "## Changes\n\n- Added Default, Smooth, and Custom presets at the top of Interpolation settings.\n- Playback now requires frame interpolation. When interpolation fails, Open SVPflow closes mpv and explains the reason.\n- Removed Playback mode from Settings and the `--profile` option from the source CLI. Existing settings load with their other values intact.\n- Added project guidelines and cleaned up documentation links.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. See the README for setup and compatibility details."
+  "notes": "## Changes\n\n- Added Default, Smooth, and Custom presets at the top of Interpolation settings. The target frame rate is independent of the preset.\n- Playback now requires frame interpolation. When interpolation fails, Open SVPflow closes mpv and explains the reason.\n- Removed Playback mode from Settings and the `--profile` option from the source CLI. Existing settings load with their other values intact.\n- Added project guidelines and cleaned up documentation links.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. See the README for setup and compatibility details."
 }

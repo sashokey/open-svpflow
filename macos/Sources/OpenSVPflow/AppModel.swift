@@ -67,7 +67,7 @@ final class AppModel {
     var playbackActive: Bool { presentation.playbackActive }
     var hasUnsavedChanges: Bool { savedRevision != revision }
     private var presetFields: [SettingDescriptor] {
-        descriptors.filter { $0.group == "Interpolation" || $0.group == "Playback" }
+        descriptors.filter { $0.group == "Interpolation" }
     }
 
     var interpolationPreset: InterpolationPreset {
@@ -203,7 +203,7 @@ final class AppModel {
                 }
                 try snapshot.set(value, at: field.path)
             }
-            saveEdit(snapshot, editingFixedFPS: true)
+            saveEdit(snapshot, editingFixedFPS: false)
         } catch { present("This setting could not be changed.") }
     }
 

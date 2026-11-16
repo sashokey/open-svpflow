@@ -64,7 +64,7 @@ import Testing
     #expect(fixture.model.interpolationPreset == .factory)
     fixture.model.edit("playback.rate", value: .string("fixed"))
     fixture.model.edit("playback.fps", value: .string("144"))
-    #expect(fixture.model.interpolationPreset == .custom)
+    #expect(fixture.model.interpolationPreset == .factory)
     fixture.model.applyInterpolationPreset(.smooth)
     #expect(fixture.model.interpolationPreset == .smooth)
     #expect(await fixture.model.flushSettings())
@@ -72,11 +72,13 @@ import Testing
     #expect(saved.value(at: "interpolation.fi_mode") == .number(5))
     #expect(saved.value(at: "interpolation.fi_precision") == .number(4))
     #expect(saved.value(at: "interpolation.output_bits") == .number(8))
-    #expect(saved.value(at: "playback.rate") == .string("monitor"))
-    #expect(saved.value(at: "playback.fps") == .string("120"))
+    #expect(saved.value(at: "playback.rate") == .string("fixed"))
+    #expect(saved.value(at: "playback.fps") == .string("144"))
     #expect(saved.value(at: "interpolation.gpu_queues") == .number(3))
     #expect(saved.value(at: "preferences.after_start") == .string("keep_open"))
     fixture.model.document = saved
+    #expect(fixture.model.interpolationPreset == .smooth)
+    fixture.model.edit("playback.fps", value: .string("150"))
     #expect(fixture.model.interpolationPreset == .smooth)
     fixture.model.edit("interpolation.fi_precision", value: .number(2))
     #expect(fixture.model.interpolationPreset == .custom)
@@ -84,6 +86,8 @@ import Testing
     #expect(fixture.model.interpolationPreset == .smooth)
     fixture.model.applyInterpolationPreset(.factory)
     #expect(fixture.model.interpolationPreset == .factory)
+    #expect(fixture.model.document.value(at: "playback.rate") == .string("fixed"))
+    #expect(fixture.model.document.value(at: "playback.fps") == .string("150"))
     #expect(await fixture.model.flushSettings())
 }
 
