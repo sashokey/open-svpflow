@@ -1,6 +1,8 @@
 import base64
 import copy
 from fractions import Fraction
+from functools import lru_cache
+import importlib.util
 import json
 import math
 import os
@@ -39,6 +41,14 @@ NATIVE_BLOCKS = ((4, 4), (8, 4), (8, 8), (16, 8), (16, 16), (32, 16), (32, 32))
 NATIVE_RESERVED = {"super": ("gpu",), "analyse": ("gpu",), "smooth": ("rate", "api", "gpuid", "render")}
 
 
+@lru_cache(maxsize=1)
+def settings_api():
+    spec = importlib.util.spec_from_file_location("open_svpflow_settings_api", Path(__file__).with_name("settings_api.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def need(value, message):
     if not value:
         raise ValueError(message)
@@ -64,6 +74,8 @@ def merged(base, change):
 
 
 def validate_settings(value):
+    if type(value) is dict and value.get("schema") == 2:
+        return settings_api().validate_interpolation(value)
     need(type(value) is dict and set(value) <= set(DEFAULT_SETTINGS), "Invalid settings fields")
     value = merged(DEFAULT_SETTINGS, value)
     need(type(value["schema"]) is int and value["schema"] == 1 and value["rate_mode"] == "monitor_auto", "Unsupported settings schema")
@@ -154,6 +166,15 @@ def select_rate(source, display, profile="auto", explicit="auto"):
     source = source_rate(source)
     if profile == "original":
         return None
+    if type(explicit) is str and explicit.startswith("source*"):
+        multiplier = target_rate(explicit[7:])
+        target = target_rate(source * multiplier)
+        need(native_timing(source, target), "Target must exceed the source and fit native phase timing")
+        return target
+    divisor = 1
+    if explicit in ("monitor/2", "monitor/3"):
+        divisor = int(explicit[-1])
+        explicit = "auto"
     if explicit not in (None, "auto"):
         target = target_rate(explicit)
         need(native_timing(source, target), "Target must exceed the source and fit native phase timing")
@@ -165,6 +186,7 @@ def select_rate(source, display, profile="auto", explicit="auto"):
     if not math.isfinite(hz) or hz <= 0:
         need(profile == "auto", "Display refresh is unavailable; pass --fps explicitly")
         return None
+    hz /= divisor
     if hz <= source or hz > NATIVE_INT_MAX:
         need(profile == "auto", "Display refresh cannot support the interpolation target")
         return None
@@ -239,6 +261,8 @@ def validate_engine_options(options, bits, gpu, ratio):
 
 
 def engine_options(settings, source, target, bits, gpu=None):
+    if type(settings) is dict and settings.get("schema") == 2:
+        return settings_api().native_options(settings, source, target, bits, gpu)
     value = validate_settings(settings)
     source = source_rate(source)
     target = target_rate(target)
@@ -312,7 +336,7 @@ def build_command(mpv, movie, graph, plugins, settings, profile="auto", fps="aut
         plugins = plugin_paths(plugins)[0].parent
         graph = Path(graph).resolve()
         need(graph.is_file(), "VapourSynth graph is unavailable")
-        if fps != "auto":
+        if fps != "auto" and fps not in ("monitor/2", "monitor/3") and not str(fps).startswith("source*"):
             target_rate(fps)
         token = encode_payload({"schema": 1, "plugins": str(plugins), "settings": settings, "profile": profile, "fps": str(fps)})
         filename = str(graph)

@@ -43,6 +43,21 @@ class GraphTests(unittest.TestCase):
                 self.assertEqual((synthesis.width, synthesis.height), (width, height))
                 self.assertEqual((analysis.width, analysis.height), (width, height))
 
+    def test_svp_compatibility_prepares_420_with_source_geometry_and_eight_bit_analysis(self):
+        for format in (vs.YUV420P10, vs.YUV444P10, vs.RGB24):
+            with self.subTest(format=format):
+                clip = self.source(format, _Matrix=1, _Primaries=1, _Transfer=1)
+                synthesis, analysis = self.prepare(clip, output_bits=10, dither="random", compatibility="svp")
+                self.assertEqual((synthesis.width, synthesis.height, synthesis.format.id), (320, 192, vs.YUV420P10))
+                self.assertEqual(analysis.format.id, vs.YUV420P8)
+                with synthesis.get_frame(0) as frame:
+                    self.assertEqual(frame.props["_Transfer"], 1)
+
+    def test_svp_compatibility_pads_odd_input_without_resizing_content(self):
+        synthesis, analysis = self.prepare(self.source(vs.RGB24, width=321, height=193), output_bits=8, compatibility="svp")
+        self.assertEqual((synthesis.width, synthesis.height, synthesis.format.id), (322, 194, vs.YUV420P8))
+        self.assertEqual((analysis.width, analysis.height), (322, 194))
+
     def test_widescreen_and_portrait_geometry_are_preserved(self):
         for size in ((640, 268), (192, 320)):
             with self.subTest(size=size):

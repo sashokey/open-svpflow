@@ -1,6 +1,7 @@
 from fractions import Fraction
 from functools import lru_cache
 import importlib.util
+import os
 from pathlib import Path
 import sys
 
@@ -23,9 +24,10 @@ def load_plugins(core, directory):
             core.std.LoadPlugin(path=str(path))
 
 
-def prepare_clip(clip, output_bits=8, dither=policy.DEFAULT_SETTINGS["dither"]):
+def prepare_clip(clip, output_bits=8, dither=policy.DEFAULT_SETTINGS["dither"], compatibility="legacy"):
     core = vs.core
     policy.need(dither in policy.DITHER_TYPES, "Unsupported dither method")
+    policy.need(compatibility in ("legacy", "svp"), "Unsupported conversion policy")
     policy.need(clip.width > 0 and clip.height > 0, "The input must have fixed dimensions; reinitialize the filter after a size change")
     def bridge_metadata(n, f):
         properties = {}
@@ -46,8 +48,10 @@ def prepare_clip(clip, output_bits=8, dither=policy.DEFAULT_SETTINGS["dither"]):
         bits = original.bits_per_sample if original is not None and original.sample_type == vs.INTEGER else 16
         output_bits = 8 if bits <= 8 else 10 if bits <= 10 else 16
     policy.need(output_bits in (8, 10, 16), "Output depth must be 8, 10, 16 or source")
-    if output_bits == 8:
+    if output_bits == 8 and compatibility == "legacy":
         format_id = vs.YUV420P8 if original is not None and original.color_family == vs.YUV and original.subsampling_w == original.subsampling_h == 1 else vs.YUV444P8
+    elif output_bits == 8:
+        format_id = vs.YUV420P8
     elif output_bits == 10:
         format_id = vs.YUV420P10
     else:
@@ -60,18 +64,26 @@ def prepare_clip(clip, output_bits=8, dither=policy.DEFAULT_SETTINGS["dither"]):
     padded = (native_width, native_height) != (width, height)
 
     @lru_cache(maxsize=16)
-    def converted(matrix):
+    def converted(matrix, input_rgb):
         intermediate = core.query_video_format(vs.YUV, vs.INTEGER, format.bits_per_sample, 0, 0).id if padded else format_id
         options = {"width": width, "height": height, "format": intermediate, "dither_type": dither}
         if matrix is not None:
             options.update(matrix=matrix, range_s="limited")
-        result = core.resize.Spline36(clip, **options)
+        if input_rgb:
+            options["matrix_in_s"] = "rgb"
+        converter = core.resize.Spline36
+        if compatibility == "svp":
+            point = original is not None and original.color_family == vs.YUV and original.subsampling_w == original.subsampling_h == 1 and not padded
+            converter = core.resize.Point if point else core.resize.Bicubic
+        source = core.std.SetFrameProps(clip, _Matrix=0) if input_rgb else clip
+        result = converter(source, **options)
         if native_width != width:
             result = core.std.StackHorizontal([result, core.std.CropAbs(result, width=1, height=height, left=width - 1)])
         if native_height != height:
             result = core.std.StackVertical([result, core.std.CropAbs(result, width=native_width, height=1, top=height - 1)])
         if padded:
-            result = core.resize.Spline36(result, format=format_id)
+            converter = core.resize.Bicubic if compatibility == "svp" else core.resize.Spline36
+            result = converter(result, format=format_id)
         return result
 
     def select(n, f):
@@ -79,7 +91,7 @@ def prepare_clip(clip, output_bits=8, dither=policy.DEFAULT_SETTINGS["dither"]):
         if f.format.color_family in (vs.RGB, vs.GRAY):
             primaries = f.props.get("_Primaries", 1)
             matrix = {5: 5, 6: 6, 9: 9}.get(primaries, 1)
-        return converted(matrix)
+        return converted(matrix, f.format.color_family == vs.RGB)
 
     template = core.std.BlankClip(clip, width=native_width, height=native_height, format=format_id)
     synthesis = core.std.FrameEval(template, select, prop_src=clip)
@@ -96,7 +108,13 @@ def interpolate(clip, settings, source, target, directory, gpu=None):
         clip = clip[:max_source]
     normalized = core.std.AssumeFPS(clip, fpsnum=source.numerator, fpsden=source.denominator)
     settings = policy.validate_settings(settings)
-    synthesis, analysis = prepare_clip(normalized, settings["output_bits"], settings["dither"])
+    bits, compatibility = settings["output_bits"], "legacy"
+    if settings["schema"] == 2:
+        source_bits = clip.format.bits_per_sample if clip.format is not None and clip.format.sample_type == vs.INTEGER else 16
+        bits = policy.settings_api().synthesis_bits(settings, clip.width, clip.height, source_bits, target)
+        compatibility = "legacy" if "legacy" in settings else "svp"
+        core.num_threads = settings["processing_threads"] or os.cpu_count() or 1
+    synthesis, analysis = prepare_clip(normalized, bits, settings["dither"], compatibility=compatibility)
     options = policy.engine_options(settings, source, target, synthesis.format.bits_per_sample, gpu=gpu)
     load_plugins(core, directory)
     super_result = core.svp1.Super(analysis, options["super"])
