@@ -145,6 +145,30 @@ class DependencyTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertNotIn("preparation finished", result.stdout)
 
+    def test_explicit_dependency_install_refreshes_only_when_mpv_is_incompatible(self):
+        source = (root / "player/install-dependencies.command").read_text()
+        self.assertEqual(source.count("brew_bin=/opt/homebrew/bin/brew"), 1)
+        for compatible in (False, True):
+            with self.subTest(compatible=compatible), tempfile.TemporaryDirectory() as directory:
+                prefix = Path(directory) / "external prefix"
+                (prefix / "bin").mkdir(parents=True)
+                brew = prefix / "bin/brew"
+                brew.write_text('#!/bin/bash\nset -eu\nprintf "%s\\n" "$*" >> "$OSVP_BREW_LOG"\ncase "$1" in\n--prefix) printf "%s\\n" "$OSVP_BREW_PREFIX";;\nupdate) : > "$OSVP_BREW_METADATA";;\nupgrade) test -f "$OSVP_BREW_METADATA";;\nesac\n')
+                brew.chmod(0o700)
+                mpv = prefix / "bin/mpv"
+                mpv.write_text('#!/bin/bash\nif [[ "$OSVP_COMPATIBLE" = 1 ]]; then printf "dropped-files\\n"; fi\n')
+                mpv.chmod(0o700)
+                fixture = source.replace("brew_bin=/opt/homebrew/bin/brew", 'brew_bin="' + str(brew) + '"')
+                self.assertNotIn("brew_bin=/opt/homebrew/bin/brew", fixture)
+                log = prefix / "calls"
+                environment = dict(os.environ, OSVP_BREW_LOG=str(log), OSVP_BREW_PREFIX=str(prefix), OSVP_BREW_METADATA=str(prefix / "metadata"), OSVP_COMPATIBLE=str(int(compatible)))
+                result = subprocess.run(["/bin/bash", "-c", fixture], env=environment, capture_output=True, text=True, timeout=5)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                expected = ["install mpv vapoursynth", "--prefix"]
+                if not compatible:
+                    expected += ["update", "upgrade mpv"]
+                self.assertEqual(log.read_text().splitlines(), expected)
+
     def test_lua_execution_error_offers_dependency_repair(self):
         with tempfile.TemporaryDirectory() as directory:
             resources, prefix = self.fixture(directory)

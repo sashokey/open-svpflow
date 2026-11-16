@@ -37,11 +37,19 @@ jobs:
       - name: Test Rust workspace
         run: cargo test --locked --workspace
       - name: Install external playback and icon build dependencies
-        run: brew install mpv vapoursynth imagemagick
+        run: |
+          brew update
+          brew install mpv vapoursynth imagemagick
       - name: Test native interface and render isolated previews
         env:
           OPEN_SVPFLOW_RENDER_PREVIEWS: ${{ runner.temp }}/app-previews
         run: xcrun swift test --package-path macos --scratch-path .build/swift-tests --disable-sandbox
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: app-previews
+          path: ${{ runner.temp }}/app-previews/*.png
+          if-no-files-found: error
+          retention-days: 7
       - name: Build ARM64 plugins
         run: |
           test "$(uname -m)" = arm64
@@ -71,12 +79,6 @@ jobs:
           vs_python="$(head -n 1 "$(command -v vspipe)")"
           vs_python="${vs_python#\#!}"
           "$vs_python" -B tests/smoke_application.py --package "$app" --gui
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: app-previews
-          path: ${{ runner.temp }}/app-previews/*.png
-          if-no-files-found: error
-          retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: open-svpflow-macos-arm64

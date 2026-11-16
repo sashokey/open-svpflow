@@ -10,6 +10,7 @@ fi
 "$brew_bin" install mpv vapoursynth
 brew_prefix="$("$brew_bin" --prefix)"
 if ! "$brew_prefix/bin/mpv" --no-config --load-scripts=no --list-properties | /usr/bin/awk '$1 == "dropped-files" { found=1 } END { exit !found }'; then
+    "$brew_bin" update
     "$brew_bin" upgrade mpv
 fi
 printf '\nPlayback component preparation finished. Return to Open SVPflow and choose Retry.\n'
