@@ -1,7 +1,9 @@
+from collections import deque
 import contextlib
 import fcntl
 import hmac
 import json
+import math
 import os
 from pathlib import Path
 import queue
@@ -80,6 +82,106 @@ def media_files(values):
                 raise ValueError("A readable local movie file is required: " + value)
             result.append(str(path))
     return result
+
+
+def playback_title(name):
+    if type(name) is not str:
+        return ""
+    if "://" in name:
+        name = name.partition("?")[0].partition("#")[0]
+    if "/" in name:
+        name = name.rsplit("/", 1)[-1]
+    return "".join(character for character in name if ord(character) >= 32).strip()[:512]
+
+
+def finite_number(value):
+    return value if type(value) in (int, float) and -math.inf < value < math.inf else None
+
+
+class PlaybackQuality:
+    window = 30
+    warmup = 4
+    sample_gap = 6
+    counters = ("output_drops", "decoder_drops", "display_delays")
+    unchecked = dict.fromkeys((*counters, "av_offset_ms"), None) | {"quality": "checking", "window_seconds": 0}
+
+    def __init__(self, title="", profile="auto", rate="auto"):
+        self.profile = profile
+        self.rate = rate
+        self.points = deque()
+        self.current = {"title": playback_title(title), "paused": False, "interpolation": False if profile == "original" else None,
+                        "target_fps": None, "display_limited": False, **self.unchecked}
+        self.last_seen = None
+
+    def reset(self):
+        self.points.clear()
+        self.current = self.current | self.unchecked
+
+    def snapshot(self):
+        result = self.current
+        if self.last_seen is not None and time.monotonic() - self.last_seen > self.sample_gap:
+            return result | self.unchecked
+        return dict(result)
+
+    def filter_status(self, source, filtered, refresh):
+        if self.profile == "original":
+            return False, None
+        if not source or source <= 0 or not filtered or filtered <= 0:
+            return None, None
+        from policy import select_rate
+        try:
+            target = select_rate(source, refresh, self.profile, self.rate)
+        except ValueError:
+            return None, None
+        if target is not None:
+            target = float(target)
+            if abs(filtered - target) <= target * 0.02 and abs(filtered - target) < abs(filtered - source):
+                return True, target
+        elif abs(filtered - source) <= source * 0.02:
+            return False, None
+        return None, None
+
+    def sample(self, values, now):
+        source, filtered, refresh, speed = (finite_number(values.get(name)) for name in ("source_fps", "filtered_fps", "refresh", "speed"))
+        interpolation, target = self.filter_status(source, filtered, refresh)
+        if interpolation is None:
+            interpolation, target = self.current["interpolation"], self.current["target_fps"]
+        paused = values.get("paused") is True
+        display_limited = bool(filtered and refresh and refresh > 0 and filtered * (speed or 1) > refresh * 1.02)
+        title = playback_title(values.get("title")) or playback_title(values.get("filename")) or self.current["title"]
+        info = self.current | self.unchecked | {"title": title, "paused": paused, "interpolation": interpolation,
+                                               "target_fps": target, "display_limited": display_limited}
+        self.last_seen = now
+        if paused or values.get("seeking") is True:
+            self.points.clear()
+            self.current = info
+            return
+        counters = tuple(values.get(name) for name in self.counters)
+        counters = tuple(value if type(value) is int and value >= 0 else None for value in counters)
+        if self.points:
+            previous_time, previous = self.points[-1]
+            if now - previous_time > self.sample_gap or any(
+                (a is None) != (b is None) or (a is not None and b is not None and b < a)
+                for a, b in zip(previous, counters)
+            ):
+                self.points.clear()
+        self.points.append((now, counters))
+        while self.points[0][0] < now - self.window:
+            self.points.popleft()
+        oldest, baseline = self.points[0]
+        if now - oldest >= self.warmup and any(value is not None for value in counters):
+            totals = tuple(None if value is None else value - start for start, value in zip(baseline, counters))
+            affected = sum(
+                any(a is not None and b is not None and b > a for a, b in zip(first[1], second[1]))
+                for first, second in zip(self.points, list(self.points)[1:])
+            )
+            count = max(value for value in totals if value is not None)
+            avsync = finite_number(values.get("avsync"))
+            info.update(zip(self.counters, totals))
+            info["av_offset_ms"] = round(avsync * 1000, 1) if avsync is not None and abs(avsync) < 3600 else None
+            info["window_seconds"] = min(self.window, int(now - oldest))
+            info["quality"] = "attention" if affected >= 2 and count >= 5 else "good" if affected else "excellent"
+        self.current = info
 
 
 class PlaylistController:
@@ -269,6 +371,7 @@ class PlaybackSession:
         self.error = None
         self.filter_required = True
         self.after_start = "quit_app"
+        self.quality = PlaybackQuality()
         self.ready = threading.Event()
         self.bridge_ready = threading.Event()
         self.stopped = threading.Event()
@@ -344,8 +447,10 @@ class PlaybackSession:
         self.active = False
         self.after_start = document["preferences"]["after_start"]
         file = self.client.get("path")
+        rate = rate_argument(document)
+        self.quality = PlaybackQuality(file, profile, rate)
         plugins = plugin_directory(self.bundle_root)
-        command = build_command(str(self.runtime["mpv"]), file, self.bundle_root / "player" / "graph.vpy", plugins, settings, profile, rate_argument(document))
+        command = build_command(str(self.runtime["mpv"]), file, self.bundle_root / "player" / "graph.vpy", plugins, settings, profile, rate)
         filters = self.client.get("vf", []) or []
         for value in filters:
             if value.get("label") in ("svp-input", "svp-interpolate"):
@@ -375,6 +480,11 @@ class PlaybackSession:
                     self.fail(str(error))
                 if not self.error:
                     self.client.command(["script-message", "open-svpflow-continue"])
+            elif self.active and len(arguments) == 2 and arguments[0] == "open-svpflow-playback-sample":
+                with contextlib.suppress(ValueError, TypeError):
+                    sample = json.loads(arguments[1])
+                    if type(sample) is dict:
+                        self.quality.sample(sample, time.monotonic())
         elif name == "playback-restart":
             if not self._filter_ok():
                 self.fail("The interpolation filter failed or was disabled")
@@ -384,8 +494,15 @@ class PlaybackSession:
                 self.active = True
                 self.ever_started = True
                 self.ready.set()
-        elif name == "end-file" and event.get("reason") == "error":
-            self.fail("mpv could not decode or process the selected movie")
+        elif name == "seek":
+            self.quality.reset()
+        elif name == "end-file":
+            self.active = False
+            if event.get("reason") == "error":
+                self.fail("mpv could not decode or process the selected movie")
+            elif event.get("reason") == "quit":
+                self.stopped.set()
+                self.ready.set()
         elif name == "shutdown":
             self.active = False
             self.stopped.set()
@@ -472,16 +589,20 @@ class PlaybackSession:
             if result == "started":
                 if not self.ready.wait(30):
                     self.fail("The movie did not start in time; see playback.log")
-                if self.error:
+                if self.error or self.stopped.is_set():
                     return self.snapshot()
-            return {"ok": True, "status": result, "after_start": self.after_start}
+            return self.snapshot(result)
 
-    def snapshot(self):
+    def snapshot(self, status=None):
         if self.error:
             return {"ok": False, "status": "error", "message": self.error, "after_start": self.after_start}
+        active = self.active
+        result = {"ok": True, "status": status or ("started" if active else "idle"), "after_start": self.after_start}
+        if active:
+            result["playback"] = self.quality.snapshot()
         if self.playlist.pending:
-            return {"ok": True, "status": "ask", "files": list(self.playlist.pending), "after_start": self.after_start}
-        return {"ok": True, "status": "started" if self.active else "idle", "after_start": self.after_start}
+            result.update(status="ask", files=list(self.playlist.pending))
+        return result
 
     def fail(self, message):
         if self.error is not None:

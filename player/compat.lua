@@ -53,8 +53,33 @@ mp.register_event("video-reconfig", function() configure(false) end)
 
 local session_client
 local pending_load
+local json = require "mp.utils"
+
+local function sample_playback()
+    if not session_client or pending_load or mp.get_property_bool("idle-active", true) then return end
+    local framedrop = mp.get_property("options/framedrop", "no")
+    local sample = {
+        title = mp.get_property("media-title"),
+        filename = mp.get_property("filename"),
+        paused = mp.get_property_bool("pause", false),
+        seeking = mp.get_property_bool("seeking", false) or mp.get_property_bool("paused-for-cache", false),
+        source_fps = mp.get_property_number("container-fps"),
+        filtered_fps = mp.get_property_number("estimated-vf-fps"),
+        refresh = mp.get_property_number("display-fps"),
+        speed = mp.get_property_number("speed"),
+        avsync = mp.get_property_number("avsync"),
+    }
+    if framedrop:find("vo", 1, true) then sample.output_drops = mp.get_property_number("frame-drop-count") end
+    if framedrop:find("decoder", 1, true) then sample.decoder_drops = mp.get_property_number("decoder-frame-drop-count") end
+    if mp.get_property_bool("display-sync-active", false) then
+        sample.display_delays = mp.get_property_number("vo-delayed-frame-count")
+    end
+    local payload = json.format_json(sample)
+    if payload then mp.commandv("script-message-to", session_client, "open-svpflow-playback-sample", payload) end
+end
 
 mp.register_script_message("open-svpflow-connect", function(client)
+    if not session_client then mp.add_periodic_timer(2, sample_playback) end
     session_client = client
     mp.commandv("script-message-to", session_client, "open-svpflow-bridge-ready")
 end)

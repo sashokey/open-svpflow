@@ -43,6 +43,20 @@ class ApplicationSmokeTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "application bundle"):
                 module.bundle_resources(Path(directory))
 
+    def test_playlist_verifies_file_identity_and_order_with_path_aliases(self):
+        module = load_smoke()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files, _ = module.make_fixtures(root)
+            alias = root / "alias"
+            alias.symlink_to(root, target_is_directory=True)
+            client = type("Client", (), {"get": lambda self, *_: [
+                {"filename": str(alias / path.name)} for path in files
+            ]})()
+            module.assert_playlist(client, files)
+            with self.assertRaises(AssertionError):
+                module.assert_playlist(client, list(reversed(files)))
+
     def test_after_start_probe_requires_matching_policy_and_window_presence(self):
         module = load_smoke()
         self.assertTrue(module.matches_gui_mode({"running": True, "policy": "regular", "visibleWindows": 1}, "keep_open"))

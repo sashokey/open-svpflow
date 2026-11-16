@@ -211,6 +211,94 @@ class WorkerTests(unittest.TestCase):
         self.assertFalse(owner.active)
         self.assertEqual(notified, [])
 
+    def test_mpv_end_file_quit_then_ipc_close_is_quiet(self):
+        notified = []
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=notified.append)
+        owner.active = True
+        owner.process_event({"event": "end-file", "reason": "quit"})
+        owner.process_event({"event": "connection-closed"})
+        self.assertTrue(owner.stopped.is_set())
+        self.assertEqual(owner.snapshot()["status"], "idle")
+        self.assertEqual(notified, [])
+
+    def report_playback(self, owner, timestamp, **sample):
+        report = {"title": "Movie title", "filename": "/tmp/a film.mkv", "paused": False, "seeking": False,
+                  "source_fps": 24.0, "filtered_fps": 48.0, "refresh": 120.0, "speed": 1.0,
+                  "output_drops": 120, "decoder_drops": 10, "avsync": -0.012, **sample}
+        with patch.object(session.time, "monotonic", return_value=timestamp):
+            owner.process_event({"event": "client-message", "args": ["open-svpflow-playback-sample", json.dumps(report)]})
+            return owner.snapshot().get("playback", {})
+
+    def test_quality_uses_recent_deltas_and_clears_old_drops(self):
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
+        owner.active = True
+        start = self.report_playback(owner, 0)
+        self.assertEqual(start.get("quality"), "checking")
+        self.assertEqual(start["title"], "Movie title")
+        self.assertIsNone(start["output_drops"])
+        self.report_playback(owner, 2)
+        smooth = self.report_playback(owner, 4)
+        self.assertEqual(smooth["quality"], "excellent")
+        self.assertEqual(smooth["output_drops"], 0)
+        self.assertEqual(smooth["window_seconds"], 4)
+        self.assertEqual(smooth["av_offset_ms"], -12)
+        occasional = self.report_playback(owner, 6, output_drops=122)
+        self.assertEqual(occasional["quality"], "good")
+        self.assertEqual(occasional["output_drops"], 2)
+        recurring = self.report_playback(owner, 8, output_drops=129)
+        self.assertEqual(recurring["quality"], "attention")
+        for timestamp in range(10, 40, 2):
+            self.report_playback(owner, timestamp, output_drops=129)
+        recovered = self.report_playback(owner, 40, output_drops=129)
+        self.assertEqual(recovered["quality"], "excellent")
+        self.assertEqual(recovered["window_seconds"], 30)
+
+    def test_quality_excludes_pause_and_seek_and_does_not_fabricate_missing_counters(self):
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
+        owner.active = True
+        self.report_playback(owner, 0)
+        self.report_playback(owner, 2)
+        paused = self.report_playback(owner, 4, paused=True, output_drops=225)
+        self.assertTrue(paused.get("paused"))
+        self.assertEqual(paused["quality"], "checking")
+        self.assertEqual(self.report_playback(owner, 6, output_drops=230)["quality"], "checking")
+        owner.process_event({"event": "seek"})
+        self.report_playback(owner, 8, output_drops=300, seeking=True)
+        self.report_playback(owner, 10, output_drops=None, decoder_drops=None)
+        self.report_playback(owner, 12, output_drops=None, decoder_drops=None)
+        resumed = self.report_playback(owner, 14, output_drops=None, decoder_drops=None)
+        self.assertEqual(resumed["quality"], "checking")
+        self.assertIsNone(resumed["output_drops"])
+        self.assertIsNone(resumed["decoder_drops"])
+
+    def test_quality_distinguishes_output_beyond_display_refresh_and_counter_reset(self):
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
+        owner.active = True
+        self.report_playback(owner, 0, refresh=30)
+        self.report_playback(owner, 2, refresh=30, output_drops=121)
+        mismatch = self.report_playback(owner, 4, refresh=30, output_drops=130)
+        self.assertEqual(mismatch.get("quality"), "attention")
+        self.assertTrue(mismatch["display_limited"])
+        reset = self.report_playback(owner, 6, refresh=30, output_drops=0)
+        self.assertEqual(reset["quality"], "checking")
+        self.assertIsNone(reset["output_drops"])
+
+    def test_playback_metadata_distinguishes_confirmed_target_from_auto_passthrough(self):
+        owner = session.PlaybackSession(self.root / "state", self.root, self.root / "runtime", notify=lambda root: None)
+        owner.active = True
+        owner.quality = session.PlaybackQuality("/tmp/Part #1?.mkv", "auto")
+        initial = owner.snapshot()["playback"]
+        self.assertEqual(initial["title"], "Part #1?.mkv")
+        self.assertIsNone(initial["interpolation"])
+        passthrough = self.report_playback(owner, 0, refresh=None, filtered_fps=24.0)
+        self.assertIs(passthrough["interpolation"], False)
+        self.assertIsNone(passthrough["target_fps"])
+
+        owner.quality = session.PlaybackQuality("Movie title", "smooth", "48")
+        confirmed = self.report_playback(owner, 1, filtered_fps=47.98)
+        self.assertIs(confirmed["interpolation"], True)
+        self.assertEqual(confirmed["target_fps"], 48)
+
     def test_lost_control_channel_is_fatal_while_player_is_still_running(self):
         from types import SimpleNamespace
         notified = []

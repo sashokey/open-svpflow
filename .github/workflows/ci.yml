@@ -40,16 +40,9 @@ jobs:
         run: |
           brew update
           brew install mpv vapoursynth imagemagick
-      - name: Test native interface and render isolated previews
-        env:
-          OPEN_SVPFLOW_RENDER_PREVIEWS: ${{ runner.temp }}/app-previews
+      - name: Test native application logic
+        timeout-minutes: 5
         run: xcrun swift test --package-path macos --scratch-path .build/swift-tests --disable-sandbox
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: app-previews
-          path: ${{ runner.temp }}/app-previews/*.png
-          if-no-files-found: error
-          retention-days: 7
       - name: Build ARM64 plugins
         run: |
           test "$(uname -m)" = arm64
@@ -71,6 +64,7 @@ jobs:
           VERSION: ${{ inputs.version || '0.0.0-ci' }}
         run: python3 -B scripts/package_release.py --version "$VERSION"
       - name: Verify extracted application with external mpv
+        timeout-minutes: 10
         run: |
           ditto -x -k dist/*.zip "$RUNNER_TEMP/application-package"
           app="$RUNNER_TEMP/application-package/Open SVPflow.app"

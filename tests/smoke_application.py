@@ -113,6 +113,22 @@ def playlist(client):
     return [value["filename"] for value in client.get("playlist", [])]
 
 
+def same_media_path(actual, expected):
+    if not actual:
+        return False
+    try:
+        return expected.samefile(actual)
+    except OSError:
+        return False
+
+
+def assert_playlist(client, expected):
+    actual = playlist(client)
+    assert len(actual) == len(expected) and all(
+        same_media_path(path, reference) for path, reference in zip(actual, expected)
+    ), (actual, expected)
+
+
 def stop_session(state, record, client):
     if record is None and (state / "session.json").exists():
         with contextlib.suppress(OSError, ValueError, RuntimeError):
@@ -143,27 +159,37 @@ def headless_session(resources, directory, files, environment):
         assert backend(resources, state, "status", environment=environment)["status"] == "started"
         assert json.loads((state / "session.json").read_text())["pid"] == worker_pid
         assert client.get("pid") == player_pid
-        assert playlist(client) == [str(path) for path in files[:2]]
+        assert_playlist(client, files[:2])
+        def playback_status():
+            return backend(resources, state, "status", environment=environment).get("playback", {})
+        status = wait_for(
+            lambda: (value if (value := playback_status()).get("interpolation") is True and value.get("target_fps") == 48 else None),
+            "mpv did not report active interpolation at the configured target",
+        )
+        assert status["title"] == files[0].name, status
         client.command(["set_property", "pause", True])
+        wait_for(lambda: playback_status().get("paused") is True, "mpv did not report paused playback")
         before_filters = client.get("vf")
         document["playback"]["fps"] = "72"
         document["preferences"]["new_files"] = "ask"
         backend(resources, state, "settings-save", {"document": document}, environment)
         assert client.get("vf") == before_filters, "Settings changed the current movie graph"
+        assert playback_status().get("target_fps") == 48, "Settings changed the current target in the playback status"
         requested = backend(resources, state, "open", {"files": [str(files[2])]}, environment)
         assert requested["status"] == "ask"
-        assert playlist(client) == [str(path) for path in files[:2]]
+        assert_playlist(client, files[:2])
         backend(resources, state, "open", {"action": "cancel"}, environment)
-        assert playlist(client) == [str(path) for path in files[:2]]
+        assert_playlist(client, files[:2])
         backend(resources, state, "open", {"files": [str(files[2])], "action": "append"}, environment)
-        assert playlist(client) == [str(path) for path in files]
+        assert_playlist(client, files)
         client.command(["playlist-next", "force"])
-        wait_for(lambda: client.get("path") == str(files[1]) and client.get("vf") != before_filters, "The next playlist entry did not receive changed settings")
+        wait_for(lambda: same_media_path(client.get("path"), files[1]) and client.get("vf") != before_filters, "The next playlist entry did not receive changed settings")
         client.command(["set_property", "pause", False])
         wait_for(lambda: "interpolation target 72 FPS" in (state / "playback.log").read_text(errors="replace"), "The next file did not generate the requested 72 FPS graph")
+        wait_for(lambda: playback_status().get("target_fps") == 72, "The next file's status did not report the new target")
         replaced = backend(resources, state, "open", {"files": [str(files[2])], "action": "replace"}, environment)
         assert replaced["status"] == "started"
-        assert playlist(client) == [str(files[2])]
+        assert_playlist(client, files[2:])
         assert client.get("pid") == player_pid
         print("PASS: first frames, detached worker, reconnect without second mpv, ordered queue, ask/cancel/append/replace, current-file stability and next-file settings", flush=True)
     finally:
