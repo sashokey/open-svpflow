@@ -54,7 +54,7 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory) / "source"
             source.mkdir()
-            for name in ("LICENSE", "THIRD_PARTY_NOTICES.md", "README.md", "player/launch.py", "player/graph.vpy", "player/policy.py", "player/settings_api.py", "player/settings.json", "player/compat.lua", "player/application.py", "player/session.py", "player/dependencies.py", "player/install-homebrew.command", "player/install-dependencies.command", "docs/usage.md"):
+            for name in (*module.PAYLOAD, "docs/usage.md"):
                 path = source / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(name)
@@ -84,6 +84,7 @@ class PackageTests(unittest.TestCase):
                 self.assertEqual(archive.read(prefix + "Frameworks/libsvpflow1_vs.dylib"), b"native-plugin")
                 self.assertEqual(archive.read(prefix + "Resources/player/settings_api.py"), b"player/settings_api.py")
                 self.assertEqual(archive.read(prefix + "Resources/LICENSE"), b"LICENSE")
+                self.assertIn(prefix + "Resources/assets/OpenSVPflow-screenshot.png", names)
                 self.assertFalse(any("docs/" in name or "__pycache__" in name for name in names))
                 self.assertFalse(any(name.endswith("/mpv") or name.endswith("/python3") or "libvsscript" in name for name in names))
                 self.assertTrue(archive.getinfo(prefix + "MacOS/OpenSVPflow").external_attr >> 16 & 0o111)

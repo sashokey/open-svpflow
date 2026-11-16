@@ -17,7 +17,7 @@ struct OpenSVPflowApp: App {
                 .environment(\.layoutDirection, appLayoutDirection)
                 .onAppear { delegate.connectWindow() }
         }
-        .defaultSize(width: 520, height: 430)
+        .defaultSize(width: 540, height: 420)
         .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) {

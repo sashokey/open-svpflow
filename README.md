@@ -1,5 +1,7 @@
 Native Apple Silicon interpolation plugins with a SwiftUI launcher and settings interface for external mpv. Requires macOS 26 or later and compatible Homebrew playback components. Based on [open-svpflow 0.1.3](https://github.com/Z1xus/open-svpflow/tree/badc0de2282d2300303f5b9461919a2bc4dbcf65); the engine retains the signed motion-vector decoding fix and is otherwise unchanged.
 
+![Open SVPflow main window](assets/OpenSVPflow-screenshot.png)
+
 ## Installation
 
 Download the application ZIP from [Releases](https://github.com/sashokey/open-svpflow/releases), extract it and open **Open SVPflow.app**. The archive contains only the application. mpv, Python and VapourSynth are external dependencies, not bundled runtimes.

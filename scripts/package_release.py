@@ -9,6 +9,7 @@ PAYLOAD = (
     "LICENSE",
     "THIRD_PARTY_NOTICES.md",
     "README.md",
+    "assets/OpenSVPflow-screenshot.png",
     "player/launch.py",
     "player/graph.vpy",
     "player/settings.json",
