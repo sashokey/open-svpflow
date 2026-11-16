@@ -59,6 +59,17 @@ jobs:
           flags=(--draft)
           if [ "$PRERELEASE" = true ]; then flags+=(--prerelease); fi
           gh release create "v$VERSION" dist/*.zip --target "$GITHUB_SHA" --title "v$VERSION" --notes-file release-notes.md "${flags[@]}"
+          gh release download "v$VERSION" --pattern '*.zip' --dir "$RUNNER_TEMP/release-verification"
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          import zipfile
+          original, = Path("dist").glob("*.zip")
+          downloaded, = (Path(os.environ["RUNNER_TEMP"]) / "release-verification").glob("*.zip")
+          assert original.read_bytes() == downloaded.read_bytes(), "Release asset differs from tested CI package"
+          with zipfile.ZipFile(downloaded) as archive:
+              assert {name.split("/")[0] for name in archive.namelist()} == {"Open SVPflow.app"}
+          PY
           if [ "$DRAFT" = false ]; then
             gh release edit "v$VERSION" --draft=false --prerelease="$PRERELEASE"
           fi

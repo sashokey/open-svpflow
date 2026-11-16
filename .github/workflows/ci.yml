@@ -18,22 +18,30 @@ permissions:
 jobs:
   test-build:
     runs-on: macos-26
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       HOMEBREW_NO_INSTALL_CLEANUP: "1"
+      HOMEBREW_NO_ANALYTICS: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+          fetch-depth: 0
+      - name: Verify unchanged engine
+        run: git diff --exit-code 85d9cbe4077dc213eb04ea65a7435c9361fdc5c3 -- crates Cargo.toml Cargo.lock
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.1 --profile minimal
       - name: Test Python adapter and packaging
         run: python3 -B -m unittest discover -s tests -p 'test_*.py' -v
       - name: Test Rust workspace
         run: cargo test --locked --workspace
-      - name: Install external playback dependencies
-        run: brew install mpv vapoursynth
+      - name: Install external playback and icon build dependencies
+        run: brew install mpv vapoursynth imagemagick
+      - name: Test native interface and render isolated previews
+        env:
+          OPEN_SVPFLOW_RENDER_PREVIEWS: ${{ runner.temp }}/app-previews
+        run: xcrun swift test --package-path macos --scratch-path .build/swift-tests --disable-sandbox
       - name: Build ARM64 plugins
         run: |
           test "$(uname -m)" = arm64
@@ -41,7 +49,7 @@ jobs:
           cargo build --locked --release -p svpflow1 -p svpflow2
           for library in target/release/libsvpflow1_vs.dylib target/release/libsvpflow2_vs.dylib; do
             test "$(lipo -archs "$library")" = arm64
-            codesign --force --sign - "$library"
+            codesign --force --sign - --timestamp=none "$library"
             codesign --verify --strict "$library"
           done
       - name: Load and exercise native plugins in VapourSynth
@@ -50,18 +58,28 @@ jobs:
           vs_python="${vs_python#\#!}"
           "$vs_python" -B tests/test_graph.py -v
           "$vs_python" -B tests/smoke_plugins.py --plugin-dir target/release
-      - name: Package plugin distribution
+      - name: Build and package application
         env:
           VERSION: ${{ inputs.version || '0.0.0-ci' }}
         run: python3 -B scripts/package_release.py --version "$VERSION"
-      - name: Verify extracted archive with external mpv
+      - name: Verify extracted application with external mpv
         run: |
-          python3 -m zipfile -e dist/*.zip "$RUNNER_TEMP/plugin-package"
-          python3 -B tests/smoke_mpv.py --package "$RUNNER_TEMP/plugin-package/open-svpflow"
+          ditto -x -k dist/*.zip "$RUNNER_TEMP/application-package"
+          app="$RUNNER_TEMP/application-package/Open SVPflow.app"
+          python3 -B tests/verify_application.py --package "$app"
+          python3 -B tests/smoke_mpv.py --package "$app/Contents/Resources"
+          vs_python="$(head -n 1 "$(command -v vspipe)")"
+          vs_python="${vs_python#\#!}"
+          "$vs_python" -B tests/smoke_application.py --package "$app" --gui
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: app-previews
+          path: ${{ runner.temp }}/app-previews/*.png
+          if-no-files-found: error
+          retention-days: 7
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: open-svpflow-macos-arm64
           path: dist/*.zip
           if-no-files-found: error
           retention-days: 7
-

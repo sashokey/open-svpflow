@@ -1,6 +1,8 @@
 import argparse
 from pathlib import Path
+import plistlib
 import re
+import shutil
 import zipfile
 
 PAYLOAD = (
@@ -12,28 +14,88 @@ PAYLOAD = (
     "player/settings.json",
     "player/policy.py",
     "player/compat.lua",
+    "player/settings_api.py",
+    "player/application.py",
+    "player/session.py",
+    "player/dependencies.py",
+    "player/install-homebrew.command",
+    "player/install-dependencies.command",
 )
 PLUGINS = ("libsvpflow1_vs.dylib", "libsvpflow2_vs.dylib")
+APP_NAME = "Open SVPflow.app"
 
 
-def package(source, library, output, version):
+def validate_version(version):
     if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?", version):
         raise ValueError("Invalid release version")
-    files = [(Path(source) / name, name) for name in PAYLOAD]
-    files += [(Path(library) / name, "lib/" + name) for name in PLUGINS]
+
+
+def assemble_bundle(source, library, executable, icons, output, version):
+    validate_version(version)
+    files = [(Path(source) / name, "Resources/" + name) for name in PAYLOAD]
+    files += [(Path(library) / name, "Frameworks/" + name) for name in PLUGINS]
+    files += [(Path(icons) / name, "Resources/" + name) for name in ("OpenSVPflow.icns", "StatusIconTemplate.png")]
+    files += [(Path(executable), "MacOS/OpenSVPflow")]
     for path, name in files:
         if path.is_symlink():
             raise ValueError("Symlinked package input: " + name)
         if not path.is_file():
             raise FileNotFoundError("Missing package input: " + name)
+    app = Path(output) / APP_NAME
+    app.mkdir(parents=True, exist_ok=False)
+    contents = app / "Contents"
+    for origin, relative in files:
+        destination = contents / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(origin, destination)
+        destination.chmod(0o755 if relative == "MacOS/OpenSVPflow" else 0o644)
+    numeric = version.split("-", 1)[0]
+    metadata = {
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleDisplayName": "Open SVPflow",
+        "CFBundleName": "Open SVPflow",
+        "CFBundleIdentifier": "org.opensvpflow.mac",
+        "CFBundleExecutable": "OpenSVPflow",
+        "CFBundlePackageType": "APPL",
+        "CFBundleInfoDictionaryVersion": "6.0",
+        "CFBundleShortVersionString": numeric,
+        "CFBundleVersion": numeric,
+        "OpenSVPflowReleaseVersion": version,
+        "CFBundleIconFile": "OpenSVPflow.icns",
+        "LSMinimumSystemVersion": "26.0",
+        "NSHighResolutionCapable": True,
+        "NSPrincipalClass": "NSApplication",
+        "CFBundleDocumentTypes": [{
+            "CFBundleTypeName": "Video",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": ["public.movie", "public.audiovisual-content", "org.matroska.mkv", "org.webmproject.webm"],
+            "CFBundleTypeExtensions": ["mkv", "mp4", "mov", "m4v", "avi", "webm", "m2ts", "ts", "mpg", "mpeg", "wmv", "flv", "mxf", "vob"],
+        }],
+    }
+    (contents / "Info.plist").write_bytes(plistlib.dumps(metadata, sort_keys=True))
+    return app
+
+
+def archive_bundle(app, output, version):
+    validate_version(version)
+    app = Path(app)
+    if app.name != APP_NAME or app.is_symlink() or not app.is_dir():
+        raise ValueError("A complete application bundle is required")
+    files = []
+    for path in sorted(app.rglob("*")):
+        if path.is_symlink():
+            raise ValueError("Application bundles must not contain symlinks")
+        if path.is_file():
+            files.append(path)
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     destination = output / ("open-svpflow-" + version + "-arm64.zip")
     with zipfile.ZipFile(destination, "x", compression=zipfile.ZIP_DEFLATED) as archive:
-        for path, name in files:
-            member = zipfile.ZipInfo("open-svpflow/" + name)
+        for path in files:
+            member = zipfile.ZipInfo(app.name + "/" + path.relative_to(app).as_posix())
             member.create_system = 3
-            member.external_attr = 0o100644 << 16
+            member.external_attr = (0o100000 | (path.stat().st_mode & 0o777)) << 16
             member.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(member, path.read_bytes())
     return destination
@@ -45,8 +107,18 @@ def main():
     parser.add_argument("--library", type=Path, default=Path("target/release"))
     parser.add_argument("--output", type=Path, default=Path("dist"))
     parser.add_argument("--version", required=True)
+    parser.add_argument("--build-root", type=Path, default=Path(".build/distribution"))
+    parser.add_argument("--executable", type=Path)
     args = parser.parse_args()
-    print(package(args.source, args.library, args.output, args.version))
+    validate_version(args.version)
+    from build_app import build_executable, generate_icons, sign_bundle
+    build = args.build_root / args.version
+    build.mkdir(parents=True, exist_ok=False)
+    executable = args.executable or build_executable(args.source, build / "swift")
+    icons = generate_icons(args.source, build / "icons")
+    app = assemble_bundle(args.source, args.library, executable, icons, build / "bundle", args.version)
+    sign_bundle(app)
+    print(archive_bundle(app, args.output, args.version))
 
 
 if __name__ == "__main__":
