@@ -85,7 +85,7 @@ public enum BoundedProcess {
                     while process.isRunning && ProcessInfo.processInfo.systemUptime < grace { try await Task.sleep(for: .milliseconds(20)) }
                     if process.isRunning { kill(process.processIdentifier, SIGKILL) }
                 }
-                process.waitUntilExit()
+                if process.isRunning { process.waitUntilExit() }
                 if let failure { throw failure }
                 let output = try Data(contentsOf: outputURL)
                 let diagnostics = try Data(contentsOf: errorURL)
