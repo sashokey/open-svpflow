@@ -16,7 +16,6 @@ final class AppModel {
     var errorMessage: String?
     var showError = false
     var showAsk = false
-    var menuBarInserted = false
     var document: JSONValue = .object([:])
     var descriptors: [SettingDescriptor] = []
     var limitations: [String] = []
@@ -291,10 +290,7 @@ final class AppModel {
         lastSessionError = nil
         let after = result["after_start"]?.string ?? document.value(at: "preferences.after_start")?.string ?? "quit_app"
         let effect = presentation.handle(status: status, afterStart: after, userInitiated: userInitiated)
-        if effect != .none {
-            menuBarInserted = effect == .showMenuBar
-            performEffect?(effect)
-        }
+        if effect != .none { performEffect?(effect) }
     }
 
     private func startStatusUpdates() {

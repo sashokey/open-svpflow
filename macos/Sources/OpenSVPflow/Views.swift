@@ -3,6 +3,7 @@ import OpenSVPflowCore
 
 struct MainView: View {
     @Bindable var model: AppModel
+    var registerSettingsAction: ((OpenSettingsAction) -> Void)?
     @State private var targeted = false
     @Environment(\.openSettings) private var openSettings
 
@@ -28,6 +29,7 @@ struct MainView: View {
         .onChange(of: model.showAsk) { _, showing in
             if !showing { model.cancelDismissedAsk() }
         }
+        .onAppear { registerSettingsAction?(openSettings) }
     }
 
     private var playbackView: some View {

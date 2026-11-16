@@ -268,8 +268,12 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
     record = client = None
     launched = None
     observed_pids = set()
+    gui_stderr = directory / "application-stderr.log"
     try:
-        command = ["/usr/bin/open", "-n", "-W", "--env", "MPV_HOME=" + str(configuration), "-a", str(app), str(files[0])]
+        command = [
+            "/usr/bin/open", "-n", "-W", "--stderr", str(gui_stderr),
+            "--env", "MPV_HOME=" + str(configuration), "-a", str(app), str(files[0]),
+        ]
         launched = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         record, client = wait_for_started_session(resources, state, environment)
         worker_pid, player_pid = record["pid"], client.get("pid")
@@ -280,7 +284,11 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
         backend(resources, state, "settings-save", {"document": document}, environment)
         subprocess.run(["/usr/bin/open", "-a", str(app), str(files[1])], check=True, timeout=5)
         wait_for(lambda: any(same_media_path(actual, files[1]) for actual in playlist(client)), "LaunchServices did not deliver the second movie to the existing session", timeout=30)
-        second = wait_for(lambda: gui_mode(app, probe, "menu_bar"), "Move to Menu Bar did not leave an accessory GUI without a main window", timeout=30)
+        def menu_bar_mode():
+            if launched.poll() is not None:
+                raise AssertionError("The GUI process exited during Move to Menu Bar")
+            return gui_mode(app, probe, "menu_bar")
+        second = wait_for(menu_bar_mode, "Move to Menu Bar did not leave an accessory GUI without a main window", timeout=30)
         assert_playlist(client, files[:2])
         assert json.loads((state / "session.json").read_text())["pid"] == worker_pid
         assert client.get("pid") == player_pid
@@ -306,8 +314,12 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
         assert client.get("pid") == player_pid
         print("PASS: LaunchServices file-open, actual GUI process exit, playback survival and reopen attached to the same worker/mpv", flush=True)
     except Exception:
+        if gui_stderr.exists():
+            print("Application stderr:\n" + gui_stderr.read_text(errors="replace")[-4096:], flush=True)
         for label, collect in (
             ("GUI metadata", lambda: gui_metadata(app, probe)),
+            ("LaunchServices exit status", lambda: launched.poll() if launched else None),
+            ("Original GUI process", lambda: {pid: alive(pid) for pid in observed_pids}),
             ("Session status", lambda: backend(resources, state, "status", environment=environment)),
             ("Playlist", lambda: [Path(path).name for path in playlist(client)] if client else []),
         ):
