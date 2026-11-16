@@ -78,7 +78,7 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         showMain()
         Task { await model.refreshStatus() }
-        return true
+        return false
     }
 
     func connectWindow() {
@@ -120,8 +120,8 @@ final class ApplicationDelegate: NSObject, NSApplicationDelegate, NSWindowDelega
         switch effect {
         case .terminateGUI: NSApplication.shared.terminate(nil)
         case .showMenuBar:
-            for window in NSApplication.shared.windows { window.orderOut(nil) }
             NSApplication.shared.setActivationPolicy(.accessory)
+            for window in NSApplication.shared.windows { window.orderOut(nil) }
         case .keepWindow: showMain()
         case .showError: showMain()
         case .hideWindow: mainWindow?.orderOut(nil)

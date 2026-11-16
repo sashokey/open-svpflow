@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import runpy
+import shutil
 import signal
 import subprocess
 import sys
@@ -35,6 +36,18 @@ def make_fixtures(directory):
     for file in files:
         write_video(file)
     return files, configuration
+
+
+def make_gui_fixtures(files):
+    movies = [file.with_suffix(".mp4") for file in files]
+    subprocess.run([
+        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-stream_loop", "89",
+        "-i", str(files[0]), "-an", "-c:v", "libx264", "-preset", "ultrafast",
+        "-movflags", "+faststart", "-n", str(movies[0]),
+    ], check=True, timeout=30)
+    for movie in movies[1:]:
+        shutil.copyfile(movies[0], movie)
+    return movies
 
 
 def wait_for(check, message, timeout=12):
@@ -225,17 +238,22 @@ def matches_gui_mode(value, mode):
     return False
 
 
-def gui_mode(app, probe, mode):
+def gui_metadata(app, probe):
     identifiers = gui_pids(app)
     if len(identifiers) != 1:
-        return False
+        return {"pids": identifiers}
     result = subprocess.run([str(probe), str(identifiers[0])], check=True, capture_output=True, text=True, timeout=5)
-    value = json.loads(result.stdout)
+    return json.loads(result.stdout)
+
+
+def gui_mode(app, probe, mode):
+    value = gui_metadata(app, probe)
     return value if matches_gui_mode(value, mode) else False
 
 
 def gui_lifetime(app, resources, directory, files, configuration, environment):
     require_isolated_gui(os.environ)
+    files = make_gui_fixtures(files)
     state = Path.home() / "Library" / "Application Support" / "Open SVPflow"
     if state.exists() or gui_pids(app):
         raise AssertionError("The isolated GUI smoke requires a fresh application state")
@@ -261,7 +279,9 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
         document["preferences"]["after_start"] = "menu_bar"
         backend(resources, state, "settings-save", {"document": document}, environment)
         subprocess.run(["/usr/bin/open", "-a", str(app), str(files[1])], check=True, timeout=5)
+        wait_for(lambda: any(same_media_path(actual, files[1]) for actual in playlist(client)), "LaunchServices did not deliver the second movie to the existing session", timeout=30)
         second = wait_for(lambda: gui_mode(app, probe, "menu_bar"), "Move to Menu Bar did not leave an accessory GUI without a main window", timeout=30)
+        assert_playlist(client, files[:2])
         assert json.loads((state / "session.json").read_text())["pid"] == worker_pid
         assert client.get("pid") == player_pid
         print("PASS: Move to Menu Bar actual runtime metadata: " + json.dumps(second), flush=True)
@@ -276,6 +296,7 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
         assert launched.returncode == 0, output + errors
         assert observed_pids and not gui_pids(app), "The actual GUI process did not exit under Quit App"
         assert alive(worker_pid) and alive(player_pid)
+        assert_playlist(client, files)
         assert backend(resources, state, "status", environment=environment)["status"] == "started"
         subprocess.run(["/usr/bin/open", "--env", "MPV_HOME=" + str(configuration), "-a", str(app)], check=True, timeout=5)
         wait_for(lambda: gui_pids(app), "The GUI did not reopen")
@@ -284,6 +305,17 @@ def gui_lifetime(app, resources, directory, files, configuration, environment):
         assert json.loads((state / "session.json").read_text())["pid"] == worker_pid
         assert client.get("pid") == player_pid
         print("PASS: LaunchServices file-open, actual GUI process exit, playback survival and reopen attached to the same worker/mpv", flush=True)
+    except Exception:
+        for label, collect in (
+            ("GUI metadata", lambda: gui_metadata(app, probe)),
+            ("Session status", lambda: backend(resources, state, "status", environment=environment)),
+            ("Playlist", lambda: [Path(path).name for path in playlist(client)] if client else []),
+        ):
+            try:
+                print(label + ": " + json.dumps(collect()), flush=True)
+            except Exception as error:
+                print(label + " unavailable: " + str(error), flush=True)
+        raise
     finally:
         if launched is not None and launched.poll() is None:
             launched.terminate()
