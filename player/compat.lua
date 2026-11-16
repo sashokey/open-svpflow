@@ -50,3 +50,27 @@ end
 
 mp.add_hook("on_preloaded", 50, function() configure(true) end)
 mp.register_event("video-reconfig", function() configure(false) end)
+
+local session_client
+local pending_load
+
+mp.register_script_message("open-svpflow-connect", function(client)
+    session_client = client
+    mp.commandv("script-message-to", session_client, "open-svpflow-bridge-ready")
+end)
+
+mp.register_script_message("open-svpflow-continue", function()
+    if pending_load then
+        local hook = pending_load
+        pending_load = nil
+        hook:cont()
+    end
+end)
+
+mp.add_hook("on_load", 50, function(hook)
+    if session_client then
+        hook:defer()
+        pending_load = hook
+        mp.commandv("script-message-to", session_client, "open-svpflow-before-load")
+    end
+end)

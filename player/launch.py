@@ -8,6 +8,7 @@ import sys
 import tempfile
 
 from policy import build_command, read_settings, validate_settings
+from dependencies import plugin_directory
 
 
 def runtime_environment(vsscript=None, environment=None, config_root=None):
@@ -68,26 +69,38 @@ def main(arguments=None):
     parser.add_argument("--plugin-dir", type=Path)
     parser.add_argument("--vsscript", type=Path)
     parser.add_argument("--settings", type=Path)
-    parser.add_argument("--profile", choices=("auto", "smooth", "original"), default="auto")
-    parser.add_argument("--fps", default="auto")
+    parser.add_argument("--profile", choices=("auto", "smooth", "original"))
+    parser.add_argument("--fps")
     parser.add_argument("--bits", choices=("8", "10", "16", "source"))
     parser.add_argument("--backend", choices=("gpu", "cpu"))
     parser.add_argument("--start", type=float)
     parser.add_argument("--duration", type=float)
     parser.add_argument("--mpv-option", action="append", default=[])
-    parser.add_argument("movie")
+    parser.add_argument("movie", nargs="+")
     options = parser.parse_args(arguments)
     try:
         root = Path(__file__).resolve().parents[1]
         plugins = options.plugin_dir
         if plugins is None:
-            plugins = root / "lib" if (root / "lib").is_dir() else root / "target" / "release"
-        settings = validate_settings({}) if options.settings is None else read_settings(options.settings)
+            plugins = plugin_directory(root)
+        profile, fps = options.profile or "auto", options.fps or "auto"
+        if options.settings is None:
+            settings = validate_settings({})
+        else:
+            try:
+                settings = read_settings(options.settings)
+            except ValueError:
+                from settings_api import load_document, playback_settings, rate_argument
+                document = load_document(options.settings)
+                settings = playback_settings(document)
+                profile = options.profile or document["playback"]["profile"]
+                fps = options.fps or rate_argument(document)
         if options.bits is not None:
             settings["output_bits"] = "source" if options.bits == "source" else int(options.bits)
         if options.backend is not None:
             settings["backend"] = options.backend
-        command = build_command(options.mpv, options.movie, root / "player" / "graph.vpy", plugins, settings, options.profile, options.fps, options.mpv_option, options.start, options.duration)
+        commands = [build_command(options.mpv, movie, root / "player" / "graph.vpy", plugins, settings, profile, fps, options.mpv_option, options.start, options.duration) for movie in options.movie]
+        command = commands[0] + [value[-1] for value in commands[1:]]
         executable = shutil.which(command[0])
         if executable is None:
             raise ValueError("External mpv was not found; install it or pass --mpv")
@@ -96,7 +109,7 @@ def main(arguments=None):
         if not compatibility.is_file():
             raise ValueError("The player compatibility script is unavailable")
         command.insert(1, "--script=" + str(compatibility))
-        if options.profile == "original":
+        if profile == "original":
             return subprocess.run(command, env=dict(os.environ)).returncode
         with tempfile.TemporaryDirectory(prefix="open-svpflow-vs-") as config_root:
             environment = runtime_environment(options.vsscript, config_root=config_root)
