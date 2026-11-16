@@ -72,8 +72,8 @@ def intermediate_pixels(resources):
     graph = runpy.run_path(str(resources / "player" / "graph.vpy"))
     core = vs.core
     source = core.std.BlankClip(width=320, height=192, format=vs.YUV420P8, length=4, fpsnum=24, fpsden=1, color=[32, 128, 128])
-    def moving_bar(n, frame):
-        output = frame.copy()
+    def moving_bar(n, f):
+        output = f.copy()
         pixels = output[0]
         for y in range(output.height):
             for x in range(output.width):
