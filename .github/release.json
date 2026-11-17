@@ -1,6 +1,6 @@
 {
-  "version": "0.1.5",
+  "version": "0.1.6",
   "draft": false,
   "prerelease": false,
-  "notes": "## Changes\n\n- Interpolation now follows the rendered video size in windowed and fullscreen playback. The filter updates after resizing settles, preserves the source aspect ratio, and avoids upscaling.\n- Updated the README screenshot.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. See the README for setup and compatibility details."
+  "notes": "## Changes\n\n- Accelerated motion estimation on Apple Silicon with ARM64 NEON kernels for seven sum-of-absolute-differences (SAD) block sizes.\n- Added a regression test for byte-identical Quarter pixel intermediate frames against v0.1.5.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. See the README for setup and compatibility details."
 }

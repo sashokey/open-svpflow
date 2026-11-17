@@ -171,7 +171,93 @@ fn sad<const W: usize, const H: usize>(src: &[u8], reference: &[u8], pitch: usiz
     if W >= 4 {
         return simd128::sad(src, W, reference, pitch, W, H);
     }
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon"
+    ))]
+    if matches!((W, H), (4, 4) | (8, 4 | 8) | (16, 8 | 16) | (32, 16 | 32)) {
+        assert!(
+            src.len() >= W * H && reference.len() >= W && pitch <= (reference.len() - W) / (H - 1)
+        );
+        return unsafe { neon::sad::<W, H>(src.as_ptr(), reference.as_ptr(), pitch) };
+    }
     sad_scalar(src, reference, pitch, W, H)
+}
+
+#[cfg(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "neon"
+))]
+mod neon {
+    use core::arch::aarch64::{
+        uint8x16_t, vabd_u8, vabdq_u8, vaddlv_u16, vaddlvq_u8, vaddlvq_u16, vaddq_u16, vdup_n_u16,
+        vdupq_n_u16, vdupq_n_u32, vld1_u8, vld1q_u8, vpadal_u8, vpadalq_u8, vreinterpretq_u8_u32,
+        vsetq_lane_u32,
+    };
+
+    #[inline(always)]
+    pub(super) unsafe fn sad<const W: usize, const H: usize>(
+        src: *const u8,
+        reference: *const u8,
+        pitch: usize,
+    ) -> u32 {
+        unsafe {
+            if W == 4 {
+                return sad_4x4(src, reference, pitch);
+            }
+            if W == 8 {
+                let mut sum = vdup_n_u16(0);
+                for row in 0..H {
+                    let a = vld1_u8(src.add(row * W));
+                    let b = vld1_u8(reference.add(row * pitch));
+                    sum = vpadal_u8(sum, vabd_u8(a, b));
+                }
+                return vaddlv_u16(sum);
+            }
+            if W == 32 && H == 32 {
+                let mut sum = 0;
+                for row in 0..H {
+                    let a = src.add(row * W);
+                    let b = reference.add(row * pitch);
+                    let left = vaddlvq_u8(diff16(a, b));
+                    let right = vaddlvq_u8(diff16(a.add(16), b.add(16)));
+                    sum += u32::from(left + right);
+                }
+                return sum;
+            }
+            let mut first = vdupq_n_u16(0);
+            let mut second = vdupq_n_u16(0);
+            for row in 0..H {
+                let a = src.add(row * W);
+                let b = reference.add(row * pitch);
+                first = vpadalq_u8(first, diff16(a, b));
+                if W == 32 {
+                    second = vpadalq_u8(second, diff16(a.add(16), b.add(16)));
+                }
+            }
+            vaddlvq_u16(vaddq_u16(first, second))
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn sad_4x4(src: *const u8, reference: *const u8, pitch: usize) -> u32 {
+        unsafe {
+            let load_row = |row| reference.add(row * pitch).cast::<u32>().read_unaligned();
+            let rows = vdupq_n_u32(load_row(0));
+            let rows = vsetq_lane_u32::<1>(load_row(1), rows);
+            let rows = vsetq_lane_u32::<2>(load_row(2), rows);
+            let rows = vsetq_lane_u32::<3>(load_row(3), rows);
+            let source = vld1q_u8(src);
+            u32::from(vaddlvq_u8(vabdq_u8(source, vreinterpretq_u8_u32(rows))))
+        }
+    }
+
+    #[inline(always)]
+    unsafe fn diff16(src: *const u8, reference: *const u8) -> uint8x16_t {
+        unsafe { vabdq_u8(vld1q_u8(src), vld1q_u8(reference)) }
+    }
 }
 
 pub(crate) fn sad_pitched(shape: Shape, a: &[u8], a_pitch: usize, b: &[u8], b_pitch: usize) -> u32 {
@@ -262,6 +348,53 @@ fn sad_scalar(src: &[u8], reference: &[u8], pitch: usize, width: usize, height: 
             .sum::<u32>();
     }
     sum
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Shape, luma_kernel, sad_scalar};
+
+    #[test]
+    fn packed_sad_matches_scalar() {
+        for (width, height) in [
+            (4, 4),
+            (8, 4),
+            (8, 8),
+            (16, 8),
+            (16, 16),
+            (32, 16),
+            (32, 32),
+        ] {
+            let shape = Shape::new(width, height);
+            let kernel = luma_kernel(shape, false);
+            let mut state = 1u32;
+            let mut random_byte = || {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            };
+            for pitch in [0, width - 1, width, width + 1, width + 13, 256, 1920] {
+                for offset in 0..16 {
+                    let mut src: Vec<u8> =
+                        (0..shape.area() + offset).map(|_| random_byte()).collect();
+                    let mut reference: Vec<u8> = (0..shape.span(pitch) + 16 - offset)
+                        .map(|_| random_byte())
+                        .collect();
+                    let src = &mut src[offset..];
+                    let reference = &mut reference[16 - offset..];
+                    assert_eq!(
+                        kernel(src, reference, pitch),
+                        sad_scalar(src, reference, pitch, width, height),
+                        "{width}x{height}, pitch {pitch}, offset {offset}"
+                    );
+                    src.fill(0);
+                    reference.fill(u8::MAX);
+                    assert_eq!(kernel(src, reference, pitch), 255 * shape.area() as u32);
+                }
+            }
+        }
+    }
 }
 
 fn sad_2x2_swapped(src: &[u8], reference: &[u8], pitch: usize) -> u32 {

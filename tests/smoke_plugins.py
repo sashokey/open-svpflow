@@ -1,6 +1,7 @@
 import argparse
 from array import array
 from fractions import Fraction
+from hashlib import sha256
 from pathlib import Path
 import runpy
 
@@ -59,6 +60,36 @@ def main():
                     failures.append(str(error))
     assert rendered, "No motion-compensated intermediate was observed: " + "; ".join(failures)
     print("PASS: native plugins loaded; 4 source frames -> 7 output frames at 48 FPS; CPU intermediate pixels and durations verified; " + str(rendered))
+    quarter_settings = {
+        "motion_precision": 4,
+        "motion_grid": {"block": 16, "overlap": 2},
+        "decrease_grid_step": 0,
+        "search_radius": {"fine": 0, "coarse": -8},
+        "coarse_width": 1050,
+        "wide_search": True,
+        "interpolation_mode": 3,
+        "shader": 23,
+        "artifacts_masking": {"cover": 80, "area": 0},
+        "scene_changes": "nearest",
+        "duplicate_frames_removal": False,
+        "output_bits": 8,
+        "dither": "ordered",
+        "native": {"super": {}, "analyse": {}, "smooth": {}},
+    }
+    quarter = graph["interpolate"](source, quarter_settings, Fraction(24), Fraction(48), options.plugin_dir, gpu=False)
+    assert (quarter.fps, quarter.num_frames) == (Fraction(48), 7)
+    hashes = []
+    for index in range(1, quarter.num_frames, 2):
+        with quarter.get_frame(index) as frame:
+            check_intermediate(source_luma[index // 2], source_luma[index // 2 + 1], bytes(frame[0]))
+            hashes.append(sha256(b"".join(bytes(plane) for plane in frame)).hexdigest())
+    expected = [
+        "139b2ef8db601be7e9de32185ef7a8de148a9b6c5aaf805fe4867f7a1777d8be",
+        "e1f889662405e328a289906d4e7c44919633b78ad7c676c8dde383cad6530dbb",
+        "d01b77c4f2a72f00a00c8150b0f6d4f21d886f8b771d131994254bfad1a87d2d",
+    ]
+    assert hashes == expected, "Quarter-pixel intermediate frames differ from v0.1.5: " + str(hashes)
+    print("PASS: all Quarter-pixel intermediate planes match v0.1.5")
     for format in (vs.YUV422P8, vs.YUV420P10, vs.YUV420P12, vs.YUV444P16, vs.RGB24, vs.RGB48, vs.GRAY16):
         resize = {"format": format}
         if vs.core.get_video_format(format).color_family == vs.RGB:
