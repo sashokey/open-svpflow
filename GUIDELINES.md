@@ -8,6 +8,7 @@ Open SVPflow brings motion-compensated frame interpolation to everyday movie pla
 
 - A fix for packed motion vectors with a negative vertical component. Both readers restore the horizontal component affected by the signed vertical value.
 - ARM64 NEON kernels for SAD and SATD in motion estimation. SAD sums absolute pixel differences. SATD sums absolute differences after a Hadamard transform. The optimized kernels preserve the integer costs used to choose motion vectors.
+- Shared GPU motion-field sampling for compatible 8-bit YUV420 chroma planes with shader 23. A paired U/V dispatch uses the existing pixel sampling and rounding helpers. Eligibility checks cover packed source offsets, matching plane parameters, and compatibility with optional effects.
 - A Python launcher and VapourSynth graph that validate settings, prepare input frames, and apply interpolation at the requested rate. The mpv input normalizer can fit the processing size to the rendered video while preserving its aspect ratio. The graph crops any padding added during frame preparation.
 - A SwiftUI launcher with file drop, playlist management, localized settings and a compact playback-quality view. An independent mpv session keeps playing when the launcher quits.
 - A GitHub Actions build that tests the engine and launcher, exercises the extracted application with external mpv, and checks the published ARM64 ZIP. The ZIP contains one ad-hoc signed app bundle with the launcher and plugins.

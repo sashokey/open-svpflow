@@ -341,6 +341,7 @@ const RETRY_MOST: std::time::Duration = std::time::Duration::from_secs(32);
 
 const UPLOAD_QUEUES: usize = 4;
 const MOTION_SLOTS: usize = 8;
+const UV_PAIR_VARIANT: u32 = 1 << 18;
 
 unsafe impl Send for GpuContext {}
 unsafe impl Sync for GpuContext {}
@@ -1191,7 +1192,7 @@ impl GpuContext {
                 program
             } else {
                 let source = format!(
-                    "#define ALGO {}\n#define CUBIC {}\n#define CUBIC_REF {}\n#define HAS_SAD {}\n#define LINEAR_LUMA {}\n#define DITHER {}\n#define BLEND {}\n#define STILL {}\n#define LAYER {}\n#define HOLD {}\n#define FUSE {}\n#define DEPTH {}\n{}",
+                    "#define ALGO {}\n#define CUBIC {}\n#define CUBIC_REF {}\n#define HAS_SAD {}\n#define LINEAR_LUMA {}\n#define DITHER {}\n#define BLEND {}\n#define STILL {}\n#define LAYER {}\n#define HOLD {}\n#define FUSE {}\n#define UV_PAIR {}\n#define DEPTH {}\n{}",
                     variant & 0xFF,
                     (variant >> 8) & 1,
                     (variant >> 9) & 1,
@@ -1203,6 +1204,7 @@ impl GpuContext {
                     (variant >> 15) & 1,
                     (variant >> 16) & 1,
                     (variant >> 17) & 1,
+                    (variant >> 18) & 1,
                     self.depth,
                     KERNEL_SRC
                 );
@@ -1401,7 +1403,7 @@ impl GpuContext {
         coverage: (&[u8], &[u8]),
         area: Option<(&[u8], &[u8])>,
         cover: Option<&Cover<'_>>,
-    ) -> Option<ClKernel> {
+    ) -> Option<(ClKernel, [ClMem; 3])> {
         let count = motion_width.checked_mul(motion_height)?;
         let k = self.variant_kernel(&mut unit.variant_kernels, variant)?;
         let q = unit.queue;
@@ -1437,15 +1439,16 @@ impl GpuContext {
             } else {
                 base_mem
             };
-            for (index, mem) in [(4, base_mem), (5, ext_mem), (6, mask_mem)] {
+            let fields = [base_mem, ext_mem, mask_mem];
+            for (index, mem) in (4..).zip(fields) {
                 if (self.cl.SetKernelArg)(k, index, size_of::<ClMem>(), (&raw const mem).cast())
                     != CL_SUCCESS
                 {
                     return None;
                 }
             }
+            Some((k, fields))
         }
-        Some(k)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1740,7 +1743,7 @@ impl GpuContext {
         let _readback = self.readbacks.take()?;
         let mut unit = self.acquire();
         unsafe {
-            let k = self.bind_fields(
+            let (k, fields) = self.bind_fields(
                 &mut unit,
                 Self::variant(&py, self.depth > 8)
                     | self.mask_variant(still)
@@ -1798,6 +1801,46 @@ impl GpuContext {
                 self.put_dst(dst);
                 return None;
             };
+            let uv_pair = chroma_pair_supported(self.depth, py, pu, pv)
+                && area.is_none()
+                && still.is_none()
+                && layer.is_none()
+                && self.hold.is_null()
+                && src0[1].0 == src0[2].0
+                && src1[1].0 == src1[2].0;
+            let uv_kernel = if uv_pair {
+                (|| {
+                    let kernel = self.variant_kernel(
+                        &mut unit.variant_kernels,
+                        Self::variant(&pu, false) | UV_PAIR_VARIANT,
+                    )?;
+                    for (index, mem) in (4..).zip(fields) {
+                        if (self.cl.SetKernelArg)(
+                            kernel,
+                            index,
+                            size_of::<ClMem>(),
+                            (&raw const mem).cast(),
+                        ) != CL_SUCCESS
+                        {
+                            return None;
+                        }
+                    }
+                    if (self.cl.SetKernelArg)(
+                        kernel,
+                        8,
+                        size_of::<ClMem>(),
+                        (&raw const v_mem).cast(),
+                    ) != CL_SUCCESS
+                        || !self.set_i32(kernel, 9, sv)
+                        || !self.set_i32(kernel, 10, pv.offset_x)
+                    {
+                        return None;
+                    }
+                    Some(kernel)
+                })()
+            } else {
+                None
+            };
             let mut kernel_done: ClEvent = std::ptr::null_mut();
             let queued = self
                 .enqueue_plane(
@@ -1812,30 +1855,44 @@ impl GpuContext {
                     std::ptr::null_mut(),
                 )
                 .and_then(|()| {
-                    self.enqueue_plane(
-                        q,
-                        k,
-                        u_mem,
-                        su / depth,
-                        pu,
-                        src0[1],
-                        src1[1],
-                        &[],
-                        std::ptr::null_mut(),
-                    )
-                })
-                .and_then(|()| {
-                    self.enqueue_plane(
-                        q,
-                        k,
-                        v_mem,
-                        sv / depth,
-                        pv,
-                        src0[2],
-                        src1[2],
-                        &[],
-                        &raw mut kernel_done,
-                    )
+                    if let Some(kernel) = uv_kernel {
+                        self.enqueue_plane(
+                            q,
+                            kernel,
+                            u_mem,
+                            su,
+                            pu,
+                            src0[1],
+                            src1[1],
+                            &[],
+                            &raw mut kernel_done,
+                        )
+                    } else {
+                        self.enqueue_plane(
+                            q,
+                            k,
+                            u_mem,
+                            su / depth,
+                            pu,
+                            src0[1],
+                            src1[1],
+                            &[],
+                            std::ptr::null_mut(),
+                        )
+                        .and_then(|()| {
+                            self.enqueue_plane(
+                                q,
+                                k,
+                                v_mem,
+                                sv / depth,
+                                pv,
+                                src0[2],
+                                src1[2],
+                                &[],
+                                &raw mut kernel_done,
+                            )
+                        })
+                    }
                 });
             if queued.is_none() {
                 self.note((self.cl.Finish)(q));
@@ -2128,6 +2185,9 @@ pub(crate) const KERNEL_SRC: &str = r"
 #ifndef FUSE
 #define FUSE 0
 #endif
+#ifndef UV_PAIR
+#define UV_PAIR 0
+#endif
 #define LAYER_MIN 0.2f
 #define LAYER_GROUP 3
 #define LAYER_FILL 4.0f
@@ -2357,11 +2417,21 @@ kernel void linear_luma(read_only image2d_t source, write_only image2d_t destina
     write_imagef(destination, position, (float4)(value, 0.0f, 0.0f, 0.0f));
 }
 
+#if UV_PAIR
+inline float blend_value(
+    read_only image2d_t source_f, read_only image2d_t source_b, Params *p,
+    float4 vector, float4 mask, float4 ext, float ref_f0, float ref_b0, float time);
+inline float blend_round(float result, const Params *p, int layered, int x, int y);
+#endif
+
 kernel void render_frame(
     global uchar *destination, int destination_stride,
     read_only image2d_t source_f, read_only image2d_t source_b,
     read_only image2d_t vectors, read_only image2d_t vectors_ext,
     read_only image2d_t masks, Params p
+#if UV_PAIR
+    , global uchar *destination_v, int destination_v_stride, int offset_x_v
+#endif
 #if STILL || HOLD
     , read_only image2d_t still
 #endif
@@ -2382,6 +2452,15 @@ kernel void render_frame(
     float4 mask = field_sample(masks, field_position, CUBIC);
 #endif
     float time = native_divide((float)p.phase, 256.0f);
+#if UV_PAIR
+    float4 ext = field_sample(vectors_ext, field_position, CUBIC);
+    float result_u = blend_value(source_f, source_b, &p, vector, mask, ext, 0.0f, 0.0f, time);
+    Params other = p;
+    other.offset_x = offset_x_v;
+    float result_v = blend_value(source_f, source_b, &other, vector, mask, ext, 0.0f, 0.0f, time);
+    destination[y*destination_stride+x] = (uchar)blend_round(result_u, &p, 0, x, y);
+    destination_v[y*destination_v_stride+x] = (uchar)blend_round(result_v, &other, 0, x, y);
+#else
     float result;
     int layered = 0;
 #if LAYER
@@ -2496,6 +2575,7 @@ kernel void render_frame(
 # endif
     destination[y*destination_stride+x] = (uchar)clamp(round(result), 0.0f, 255.0f);
 #endif
+#endif
 }
 
 #if BLEND && DEPTH == 8
@@ -2537,6 +2617,9 @@ inline float4 layer_sample(read_only image2d_array_t image, float2 position, int
 #endif
 }
 
+#endif
+
+#if (BLEND && DEPTH == 8) || UV_PAIR
 inline float blend_value(
     read_only image2d_t source_f, read_only image2d_t source_b, Params *p,
     float4 vector, float4 mask, float4 ext, float ref_f0, float ref_b0, float time)
@@ -2599,6 +2682,9 @@ inline float blend_round(float result, const Params *p, int layered, int x, int 
     return clamp(round(result), 0.0f, 255.0f);
 }
 
+#endif
+
+#if BLEND && DEPTH == 8
 #if FUSE
 inline float fuse_slot(
     read_only image2d_t source, read_only image2d_t source_f, read_only image2d_t source_b,
@@ -3082,4 +3168,224 @@ unsafe fn device_size(cl: &OpenCl, device: ClDeviceId, param: ClUint) -> Option<
     usize::try_from(size)
         .ok()
         .filter(|&size| status == CL_SUCCESS && size > 0)
+}
+
+fn chroma_pair_supported(
+    depth: u32,
+    y: KernelParams,
+    u: KernelParams,
+    mut v: KernelParams,
+) -> bool {
+    let v_offset = v.offset_x;
+    v.offset_x = u.offset_x;
+    depth == 8
+        && u == v
+        && y.algorithm == 23
+        && u.algorithm == 23
+        && y.cubic == u.cubic
+        && y.cubic_ref == u.cubic_ref
+        && y.dither == u.dither
+        && y.has_sad == 0
+        && u.has_sad == 0
+        && u.linear_luma == 0
+        && u.x_ratio == 2
+        && u.y_ratio == 2
+        && y.width % 2 == 0
+        && y.height % 2 == 0
+        && u.width == y.width / 2
+        && u.height == y.height / 2
+        && u.offset_x == 0
+        && v_offset == u.width
+        && u.offset_y == y.height
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{KernelParams, chroma_pair_supported};
+
+    fn plane_params() -> [KernelParams; 3] {
+        let y = KernelParams {
+            algorithm: 23,
+            width: 640,
+            height: 360,
+            x_ratio: 1,
+            y_ratio: 1,
+            pel: 4,
+            block_w: 16,
+            block_h: 16,
+            origin_x: 0,
+            origin_y: 0,
+            phase: 128,
+            has_sad: 0,
+            linear_luma: 1,
+            cubic: 1,
+            cubic_ref: 0,
+            offset_x: 0,
+            offset_y: 0,
+            sad_blend: 0.5,
+            dither: 0,
+        };
+        let u = KernelParams {
+            width: y.width / 2,
+            height: y.height / 2,
+            x_ratio: 2,
+            y_ratio: 2,
+            linear_luma: 0,
+            offset_y: y.height,
+            ..y
+        };
+        let v = KernelParams {
+            offset_x: u.width,
+            ..u
+        };
+        [y, u, v]
+    }
+
+    #[test]
+    fn chroma_pair_accepts_matching_eight_bit_420_planes() {
+        let [y, u, v] = plane_params();
+        assert!(chroma_pair_supported(8, y, u, v));
+        let y = KernelParams {
+            linear_luma: 0,
+            ..y
+        };
+        assert!(chroma_pair_supported(8, y, u, v));
+    }
+
+    #[test]
+    fn chroma_pair_accepts_matching_dither() {
+        let [mut y, mut u, mut v] = plane_params();
+        y.dither = 1;
+        u.dither = 1;
+        v.dither = 1;
+        assert!(chroma_pair_supported(8, y, u, v));
+    }
+
+    #[test]
+    fn chroma_pair_rejects_high_depth_and_other_chroma_layouts() {
+        let [y, u, v] = plane_params();
+        for depth in [10, 16] {
+            assert!(!chroma_pair_supported(depth, y, u, v));
+        }
+        for (x_ratio, y_ratio) in [(1, 1), (2, 1)] {
+            let u = KernelParams {
+                width: y.width / x_ratio,
+                height: y.height / y_ratio,
+                x_ratio,
+                y_ratio,
+                ..u
+            };
+            let v = KernelParams {
+                offset_x: u.width,
+                ..u
+            };
+            assert!(!chroma_pair_supported(8, y, u, v));
+        }
+    }
+
+    #[test]
+    fn chroma_pair_rejects_mismatched_chroma_parameters() {
+        let [y, u, v] = plane_params();
+        for changed in [
+            KernelParams {
+                width: v.width - 1,
+                ..v
+            },
+            KernelParams {
+                height: v.height - 1,
+                ..v
+            },
+            KernelParams {
+                phase: v.phase + 1,
+                ..v
+            },
+            KernelParams {
+                offset_y: v.offset_y + 1,
+                ..v
+            },
+            KernelParams { cubic_ref: 1, ..v },
+            KernelParams {
+                sad_blend: 0.375,
+                ..v
+            },
+        ] {
+            assert!(!chroma_pair_supported(8, y, u, changed));
+        }
+    }
+
+    #[test]
+    fn chroma_pair_rejects_incompatible_luma_sampling_and_masks() {
+        let [y, u, v] = plane_params();
+        for changed in [
+            KernelParams { algorithm: 21, ..y },
+            KernelParams { cubic: 0, ..y },
+            KernelParams { cubic_ref: 1, ..y },
+            KernelParams { dither: 1, ..y },
+            KernelParams { has_sad: 1, ..y },
+        ] {
+            assert!(!chroma_pair_supported(8, changed, u, v));
+        }
+        assert!(!chroma_pair_supported(
+            8,
+            y,
+            KernelParams { has_sad: 1, ..u },
+            KernelParams { has_sad: 1, ..v },
+        ));
+        assert!(!chroma_pair_supported(
+            8,
+            y,
+            KernelParams {
+                linear_luma: 1,
+                ..u
+            },
+            KernelParams {
+                linear_luma: 1,
+                ..v
+            },
+        ));
+    }
+
+    #[test]
+    fn chroma_pair_rejects_wrong_offsets_and_odd_luma_dimensions() {
+        let [y, u, v] = plane_params();
+        assert!(!chroma_pair_supported(
+            8,
+            y,
+            u,
+            KernelParams { offset_x: 0, ..v }
+        ));
+        assert!(!chroma_pair_supported(
+            8,
+            y,
+            u,
+            KernelParams {
+                offset_x: v.offset_x + 1,
+                ..v
+            }
+        ));
+        assert!(!chroma_pair_supported(
+            8,
+            y,
+            KernelParams { offset_x: 1, ..u },
+            v
+        ));
+        assert!(!chroma_pair_supported(
+            8,
+            KernelParams {
+                width: y.width + 1,
+                ..y
+            },
+            u,
+            v
+        ));
+        assert!(!chroma_pair_supported(
+            8,
+            KernelParams {
+                height: y.height + 1,
+                ..y
+            },
+            u,
+            v
+        ));
+    }
 }
