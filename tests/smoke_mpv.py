@@ -51,6 +51,12 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", type=Path, required=True)
     args = parser.parse_args()
+    viewport_environment = dict(os.environ, OPEN_SVPFLOW_TEST_COMPAT=str(args.package.resolve() / "player" / "compat.lua"))
+    viewport_environment.pop("OPEN_SVPFLOW_GRAPH_DIR", None)
+    subprocess.run([
+        "mpv", "--no-config", "--load-scripts=no", "--idle=yes", "--force-window=no",
+        "--script=" + str(Path(__file__).with_name("smoke_viewport.lua")),
+    ], env=viewport_environment, check=True, timeout=10)
     with tempfile.TemporaryDirectory(prefix="open-svpflow-smoke-") as directory:
         movie = Path(directory) / "synthetic motion.y4m"
         remove_filter = Path(directory) / "remove-filter.lua"
