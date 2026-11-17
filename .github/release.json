@@ -1,6 +1,6 @@
 {
-  "version": "0.1.8",
+  "version": "0.1.9",
   "draft": false,
   "prerelease": false,
-  "notes": "## Changes\n\n- Combine U and V synthesis into one GPU dispatch for compatible 8-bit YUV420 clips using shader 23. The two planes share motion-field sampling.\n- Add regression tests for selecting the paired chroma path. All 2,400 reference output frames matched byte for byte, including synthesized frames.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. See the README for setup and compatibility details."
+  "notes": "## Changes\n\n- Batch source-plane uploads and read GPU output directly into the destination planes for 8-bit video on Apple Silicon.\n- Track OpenCL transfer completion before releasing host frame buffers.\n- All 7,200 reference frames matched v0.1.8 byte for byte in the 120 FPS and 240 FPS tests, including synthesized frames.\n\nExtract the ZIP and open Open SVPflow.app on an Apple Silicon Mac running macOS 26 or later. See the README for setup and compatibility details."
 }

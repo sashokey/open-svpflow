@@ -71,6 +71,8 @@ type ClKernel = *mut c_void;
 type ClMem = *mut c_void;
 type ClEvent = *mut c_void;
 
+const CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST: ClInt = -14;
+
 const CL_DEVICE_NAME: ClUint = 0x102B;
 const CL_DEVICE_GLOBAL_MEM_SIZE: ClUint = 0x101F;
 const CL_DEVICE_MAX_PARAMETER_SIZE: ClUint = 0x1017;
@@ -810,9 +812,56 @@ impl GpuContext {
         };
         let resources = self.upload_resources()?;
         unsafe {
-            self.enqueue_plane_at(resources.queue, packed, planes[0], 0, 0)?;
-            self.enqueue_plane_at(resources.queue, packed, planes[1], 0, height)?;
-            self.enqueue_plane_at(resources.queue, packed, planes[2], planes[1].width, height)?;
+            let q = resources.queue;
+            let batch = direct_host_transfers(self.depth);
+            let blocking = if batch { CL_FALSE } else { CL_TRUE };
+            let mut events = [std::ptr::null_mut(); 2];
+            let uploaded = self
+                .enqueue_plane_at(
+                    q,
+                    packed,
+                    planes[0],
+                    (0, 0),
+                    blocking,
+                    &[],
+                    if batch {
+                        &raw mut events[0]
+                    } else {
+                        std::ptr::null_mut()
+                    },
+                )
+                .and_then(|()| {
+                    self.enqueue_plane_at(
+                        q,
+                        packed,
+                        planes[1],
+                        (0, height),
+                        blocking,
+                        &[],
+                        if batch {
+                            &raw mut events[1]
+                        } else {
+                            std::ptr::null_mut()
+                        },
+                    )
+                })
+                .and_then(|()| {
+                    self.enqueue_plane_at(
+                        q,
+                        packed,
+                        planes[2],
+                        (planes[1].width, height),
+                        CL_TRUE,
+                        if batch { &events } else { &[] },
+                        std::ptr::null_mut(),
+                    )
+                });
+            if uploaded.is_none() && batch {
+                self.settle_host_transfers(q, &events);
+                entry.pool_cap = 0;
+            }
+            self.release_transfer_events(&events);
+            uploaded?;
             if !self.linear {
                 return Some(entry);
             }
@@ -851,13 +900,16 @@ impl GpuContext {
         Some(entry)
     }
 
+    #[allow(clippy::too_many_arguments)]
     unsafe fn enqueue_plane_at(
         &self,
         q: ClCommandQueue,
         mem: ClMem,
         plane: UploadPlane<'_>,
-        x: usize,
-        y: usize,
+        (x, y): (usize, usize),
+        blocking: ClUint,
+        waits: &[ClEvent],
+        event: *mut ClEvent,
     ) -> Option<()> {
         let bytes = if self.depth > 8 { 2 } else { 1 };
         if plane.data.len()
@@ -874,15 +926,19 @@ impl GpuContext {
             self.note((self.cl.EnqueueWriteImage)(
                 q,
                 mem,
-                CL_TRUE,
+                blocking,
                 origin.as_ptr(),
                 region.as_ptr(),
                 plane.stride,
                 0,
                 plane.data.as_ptr().cast(),
-                0,
-                std::ptr::null(),
-                std::ptr::null_mut(),
+                ClUint::try_from(waits.len()).ok()?,
+                if waits.is_empty() {
+                    std::ptr::null()
+                } else {
+                    waits.as_ptr().cast()
+                },
+                event.cast(),
             ))
         };
         (rc == CL_SUCCESS).then_some(())
@@ -1229,31 +1285,80 @@ impl GpuContext {
     }
 
     unsafe fn wait_event(&self, queue: ClCommandQueue, event: ClEvent) -> bool {
-        unsafe { (self.cl.Flush)(queue) };
-        let done = loop {
-            let mut status: ClInt = 1;
-            let got = unsafe {
-                (self.cl.GetEventInfo)(
-                    event,
-                    CL_EVENT_COMMAND_EXECUTION_STATUS,
-                    size_of::<ClInt>(),
-                    (&raw mut status).cast(),
-                    std::ptr::null_mut(),
-                )
+        unsafe { self.wait_readback(queue, event, &[]) }
+    }
+
+    unsafe fn wait_readback(
+        &self,
+        queue: ClCommandQueue,
+        event: ClEvent,
+        host_events: &[ClEvent],
+    ) -> bool {
+        let flushed = unsafe { (self.cl.Flush)(queue) };
+        let done = (host_events.is_empty() || self.note(flushed) == CL_SUCCESS)
+            && loop {
+                let mut status: ClInt = 1;
+                let got = unsafe {
+                    (self.cl.GetEventInfo)(
+                        event,
+                        CL_EVENT_COMMAND_EXECUTION_STATUS,
+                        size_of::<ClInt>(),
+                        (&raw mut status).cast(),
+                        std::ptr::null_mut(),
+                    )
+                };
+                if got != CL_SUCCESS || status < 0 {
+                    break false;
+                }
+                if status == 0 {
+                    break true;
+                }
+                std::thread::sleep(std::time::Duration::from_micros(50));
             };
-            if got != CL_SUCCESS || status < 0 {
-                break false;
-            }
-            if status == 0 {
-                break true;
-            }
-            std::thread::sleep(std::time::Duration::from_micros(50));
-        };
         if !done {
-            unsafe { self.note((self.cl.Finish)(queue)) };
+            if host_events.is_empty() {
+                unsafe { self.note((self.cl.Finish)(queue)) };
+            } else {
+                unsafe { self.settle_host_transfers(queue, host_events) };
+            }
         }
         unsafe { (self.cl.ReleaseEvent)(event) };
         done
+    }
+
+    unsafe fn settle_host_transfers(&self, queue: ClCommandQueue, events: &[ClEvent]) {
+        for event in events.iter().filter(|event| !event.is_null()) {
+            let status = unsafe { self.note((self.cl.WaitForEvents)(1, event)) };
+            if matches!(
+                status,
+                CL_SUCCESS | CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST
+            ) {
+                continue;
+            }
+            if unsafe { self.note((self.cl.Finish)(queue)) } == CL_SUCCESS {
+                return;
+            }
+            let mut execution_status = 1;
+            let queried = unsafe {
+                self.note((self.cl.GetEventInfo)(
+                    *event,
+                    CL_EVENT_COMMAND_EXECUTION_STATUS,
+                    size_of::<ClInt>(),
+                    (&raw mut execution_status).cast(),
+                    std::ptr::null_mut(),
+                ))
+            };
+            if queried != CL_SUCCESS || execution_status > 0 {
+                eprintln!("open-svpflow: failed to synchronize an OpenCL host transfer");
+                std::process::abort();
+            }
+        }
+    }
+
+    unsafe fn release_transfer_events(&self, events: &[ClEvent]) {
+        for &event in events.iter().filter(|event| !event.is_null()) {
+            unsafe { (self.cl.ReleaseEvent)(event) };
+        }
     }
 
     unsafe fn set_i32(&self, k: ClKernel, i: u32, v: i32) -> bool {
@@ -1899,10 +2004,22 @@ impl GpuContext {
                 self.put_dst(dst);
                 return None;
             }
-            (self.cl.Flush)(q);
+            let direct = direct_host_transfers(self.depth);
+            let flushed = (self.cl.Flush)(q);
+            if direct && self.note(flushed) != CL_SUCCESS {
+                self.settle_host_transfers(q, &[kernel_done]);
+                (self.cl.ReleaseEvent)(kernel_done);
+                self.put_dst(dst);
+                return None;
+            }
             let mut done: ClEvent = std::ptr::null_mut();
-            let total = dst_y.len() + dst_u.len() + dst_v.len();
-            let pin = self.take_pin(xq, total);
+            let pin = if direct {
+                None
+            } else {
+                let total = dst_y.len() + dst_u.len() + dst_v.len();
+                self.take_pin(xq, total)
+            };
+            let mut read_events: [ClEvent; 3] = [std::ptr::null_mut(); 3];
             let mut offset = 0;
             for (index, (dmem, output)) in [
                 (y_mem, &mut *dst_y),
@@ -1919,8 +2036,17 @@ impl GpuContext {
                 offset += output.len();
                 let (count, list) = if index == 0 {
                     (1, (&raw const kernel_done).cast())
+                } else if direct && index == 2 {
+                    (2, read_events.as_ptr().cast())
                 } else {
                     (0, std::ptr::null())
+                };
+                let event = if direct {
+                    (&raw mut read_events[index]).cast()
+                } else if index == 2 {
+                    (&raw mut done).cast()
+                } else {
+                    std::ptr::null_mut()
                 };
                 if self.note((self.cl.EnqueueReadBuffer)(
                     xq,
@@ -1931,18 +2057,20 @@ impl GpuContext {
                     target.cast(),
                     count,
                     list,
-                    if index == 2 {
-                        (&raw mut done).cast()
-                    } else {
-                        std::ptr::null_mut()
-                    },
+                    event,
                 )) != CL_SUCCESS
                 {
                     if !done.is_null() {
                         (self.cl.ReleaseEvent)(done);
                     }
-                    self.note((self.cl.Finish)(xq));
-                    self.note((self.cl.Finish)(q));
+                    if direct {
+                        self.settle_host_transfers(xq, &read_events);
+                        self.release_transfer_events(&read_events);
+                        self.settle_host_transfers(q, &[kernel_done]);
+                    } else {
+                        self.note((self.cl.Finish)(xq));
+                        self.note((self.cl.Finish)(q));
+                    }
                     (self.cl.ReleaseEvent)(kernel_done);
                     self.put_dst(dst);
                     if let Some(pin) = pin {
@@ -1959,7 +2087,13 @@ impl GpuContext {
                 std::mem::take(&mut unit.packed_mask),
             );
             drop(unit);
-            let finished = self.wait_event(xq, done);
+            let finished = if direct {
+                let finished = self.wait_readback(xq, read_events[2], &read_events);
+                self.release_transfer_events(&read_events[..2]);
+                finished
+            } else {
+                self.wait_event(xq, done)
+            };
             drop(held);
             self.put_dst(dst);
             if let Some(pin) = pin {
@@ -3170,6 +3304,10 @@ unsafe fn device_size(cl: &OpenCl, device: ClDeviceId, param: ClUint) -> Option<
         .filter(|&size| status == CL_SUCCESS && size > 0)
 }
 
+fn direct_host_transfers(depth: u32) -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64")) && depth == 8
+}
+
 fn chroma_pair_supported(
     depth: u32,
     y: KernelParams,
@@ -3201,7 +3339,17 @@ fn chroma_pair_supported(
 
 #[cfg(test)]
 mod tests {
-    use super::{KernelParams, chroma_pair_supported};
+    use super::{KernelParams, chroma_pair_supported, direct_host_transfers};
+
+    #[test]
+    fn direct_host_transfers_are_limited_to_eight_bit_apple_silicon() {
+        assert_eq!(
+            direct_host_transfers(8),
+            cfg!(all(target_os = "macos", target_arch = "aarch64"))
+        );
+        assert!(!direct_host_transfers(10));
+        assert!(!direct_host_transfers(16));
+    }
 
     fn plane_params() -> [KernelParams; 3] {
         let y = KernelParams {
