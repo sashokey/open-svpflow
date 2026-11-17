@@ -10,6 +10,7 @@ enum InterpolationPreset: Hashable {
             switch path {
             case "interpolation.fi_mode": return .number(5)
             case "interpolation.fi_precision": return .number(4)
+            case "interpolation.mv_grid": return .number(16)
             case "interpolation.output_bits": return .number(8)
             default: break
             }

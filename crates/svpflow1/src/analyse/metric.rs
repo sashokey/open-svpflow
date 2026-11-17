@@ -192,9 +192,11 @@ fn sad<const W: usize, const H: usize>(src: &[u8], reference: &[u8], pitch: usiz
 ))]
 mod neon {
     use core::arch::aarch64::{
-        uint8x16_t, vabd_u8, vabdq_u8, vaddlv_u16, vaddlvq_u8, vaddlvq_u16, vaddq_u16, vdup_n_u16,
-        vdupq_n_u16, vdupq_n_u32, vld1_u8, vld1q_u8, vpadal_u8, vpadalq_u8, vreinterpretq_u8_u32,
-        vsetq_lane_u32,
+        int16x8_t, uint8x16_t, uint16x8_t, vabd_u8, vabdq_u8, vabsq_s16, vaddlv_u16, vaddlvq_u8,
+        vaddlvq_u16, vaddq_s16, vaddq_u16, vcreate_u8, vdup_n_u16, vdupq_n_u16, vdupq_n_u32,
+        vld1_u8, vld1q_u8, vmaxq_s16, vpadal_u8, vpadalq_u8, vreinterpretq_s16_u16,
+        vreinterpretq_u8_u32, vreinterpretq_u16_s16, vrev32q_s16, vrev64q_s16, vsetq_lane_u32,
+        vsubl_u8, vsubq_s16,
     };
 
     #[inline(always)]
@@ -238,6 +240,60 @@ mod neon {
                 }
             }
             vaddlvq_u16(vaddq_u16(first, second))
+        }
+    }
+
+    #[inline(always)]
+    pub(super) unsafe fn satd<const W: usize, const H: usize>(
+        src: *const u8,
+        reference: *const u8,
+        pitch: usize,
+    ) -> u32 {
+        let mut total = 0;
+        for y in (0..H).step_by(4) {
+            for x in (0..W).step_by(8) {
+                let [first, second, third, fourth] = std::array::from_fn(|row| unsafe {
+                    let src = src.add((y + row) * W + x);
+                    let reference = reference.add((y + row) * pitch + x);
+                    let (src, reference) = if W == 4 {
+                        (
+                            vcreate_u8(u64::from(src.cast::<u32>().read_unaligned())),
+                            vcreate_u8(u64::from(reference.cast::<u32>().read_unaligned())),
+                        )
+                    } else {
+                        (vld1_u8(src), vld1_u8(reference))
+                    };
+                    vreinterpretq_s16_u16(vsubl_u8(src, reference))
+                });
+                unsafe {
+                    let top_sum = vaddq_s16(first, second);
+                    let bottom_sum = vaddq_s16(third, fourth);
+                    let top_diff = vsubq_s16(first, second);
+                    let bottom_diff = vsubq_s16(third, fourth);
+                    let sums = vaddq_u16(
+                        satd_horizontal(vaddq_s16(top_sum, bottom_sum)),
+                        satd_horizontal(vsubq_s16(top_sum, bottom_sum)),
+                    );
+                    let diffs = vaddq_u16(
+                        satd_horizontal(vaddq_s16(top_diff, bottom_diff)),
+                        satd_horizontal(vsubq_s16(top_diff, bottom_diff)),
+                    );
+                    total += vaddlvq_u16(vaddq_u16(sums, diffs));
+                }
+            }
+        }
+        total / 4
+    }
+
+    #[inline(always)]
+    unsafe fn satd_horizontal(row: int16x8_t) -> uint16x8_t {
+        unsafe {
+            let swap = vrev32q_s16(row);
+            let sums = vabsq_s16(vaddq_s16(row, swap));
+            let diffs = vabsq_s16(vsubq_s16(row, swap));
+            let sum_max = vmaxq_s16(sums, vrev64q_s16(sums));
+            let diff_max = vmaxq_s16(diffs, vrev64q_s16(diffs));
+            vreinterpretq_u16_s16(vaddq_s16(sum_max, diff_max))
         }
     }
 
@@ -354,6 +410,56 @@ fn sad_scalar(src: &[u8], reference: &[u8], pitch: usize, width: usize, height: 
 mod tests {
     use super::{Shape, luma_kernel, sad_scalar};
 
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon"
+    ))]
+    #[test]
+    fn neon_satd_matches_scalar() {
+        use super::{neon, satd_scalar};
+
+        fn compare<const W: usize, const H: usize>() {
+            let mut state = 73u32;
+            let mut next = || {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+                (state >> 24) as u8
+            };
+            for pitch in [0, W - 1, W, W + 1, W + 13, 1920] {
+                for offset in 0..16 {
+                    let mut src: Vec<u8> = (0..W * H + offset).map(|_| next()).collect();
+                    let mut reference: Vec<u8> = (0..(H - 1) * pitch + W + 15 - offset)
+                        .map(|_| next())
+                        .collect();
+                    let src = &mut src[offset..];
+                    let reference = &mut reference[15 - offset..];
+                    let check = |src: &[u8], reference: &[u8]| {
+                        let actual =
+                            unsafe { neon::satd::<W, H>(src.as_ptr(), reference.as_ptr(), pitch) };
+                        assert_eq!(actual, satd_scalar(src, W, reference, pitch, W, H));
+                    };
+                    check(src, reference);
+                    src.fill(0);
+                    reference.fill(u8::MAX);
+                    check(src, reference);
+                    src.fill(u8::MAX);
+                    reference.fill(0);
+                    check(src, reference);
+                }
+            }
+        }
+
+        compare::<4, 4>();
+        compare::<8, 4>();
+        compare::<8, 8>();
+        compare::<16, 8>();
+        compare::<16, 16>();
+        compare::<32, 16>();
+        compare::<32, 32>();
+    }
+
     #[test]
     fn packed_sad_matches_scalar() {
         for (width, height) in [
@@ -434,6 +540,17 @@ fn satd<const W: usize, const H: usize>(src: &[u8], reference: &[u8], pitch: usi
     #[cfg(all(target_arch = "x86_64", target_feature = "ssse3"))]
     if W == 4 && H == 4 {
         return unsafe { satd_4x4_ssse3(src, reference, pitch) };
+    }
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon"
+    ))]
+    if matches!((W, H), (4, 4) | (8, 4 | 8) | (16, 8 | 16) | (32, 16 | 32)) {
+        assert!(
+            src.len() >= W * H && reference.len() >= W && pitch <= (reference.len() - W) / (H - 1)
+        );
+        return unsafe { neon::satd::<W, H>(src.as_ptr(), reference.as_ptr(), pitch) };
     }
     satd_scalar(src, W, reference, pitch, W, H)
 }

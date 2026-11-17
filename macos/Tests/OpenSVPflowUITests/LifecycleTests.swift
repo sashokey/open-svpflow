@@ -71,6 +71,7 @@ import Testing
     let saved = try #require(try await fixture.client.call("settings-get")["document"])
     #expect(saved.value(at: "interpolation.fi_mode") == .number(5))
     #expect(saved.value(at: "interpolation.fi_precision") == .number(4))
+    #expect(saved.value(at: "interpolation.mv_grid") == .number(16))
     #expect(saved.value(at: "interpolation.output_bits") == .number(8))
     #expect(saved.value(at: "playback.rate") == .string("fixed"))
     #expect(saved.value(at: "playback.fps") == .string("144"))
