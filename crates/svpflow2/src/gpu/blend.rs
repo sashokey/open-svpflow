@@ -712,7 +712,7 @@ impl GpuContext {
                 && Arc::ptr_eq(&group.frames[1], &src1.entry)
         });
         if !joins {
-            let variant = Self::variant(&params[0], false)
+            let variant = Self::base_variant(&params[0], false)
                 | BLEND_VARIANT
                 | self.mask_variant(still)
                 | if layer.is_some() { LAYER_VARIANT } else { 0 };

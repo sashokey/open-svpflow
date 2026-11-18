@@ -344,6 +344,8 @@ const RETRY_MOST: std::time::Duration = std::time::Duration::from_secs(32);
 const UPLOAD_QUEUES: usize = 4;
 const MOTION_SLOTS: usize = 8;
 const UV_PAIR_VARIANT: u32 = 1 << 18;
+const CUBIC_FIELD_16_VARIANT: u32 = 1 << 19;
+const RENDER_PARAMS_ARG: ClUint = 7;
 
 unsafe impl Send for GpuContext {}
 unsafe impl Sync for GpuContext {}
@@ -1248,7 +1250,7 @@ impl GpuContext {
                 program
             } else {
                 let source = format!(
-                    "#define ALGO {}\n#define CUBIC {}\n#define CUBIC_REF {}\n#define HAS_SAD {}\n#define LINEAR_LUMA {}\n#define DITHER {}\n#define BLEND {}\n#define STILL {}\n#define LAYER {}\n#define HOLD {}\n#define FUSE {}\n#define UV_PAIR {}\n#define DEPTH {}\n{}",
+                    "#define ALGO {}\n#define CUBIC {}\n#define CUBIC_REF {}\n#define HAS_SAD {}\n#define LINEAR_LUMA {}\n#define DITHER {}\n#define BLEND {}\n#define STILL {}\n#define LAYER {}\n#define HOLD {}\n#define FUSE {}\n#define UV_PAIR {}\n#define CUBIC_FIELD_16 {}\n#define DEPTH {}\n{}",
                     variant & 0xFF,
                     (variant >> 8) & 1,
                     (variant >> 9) & 1,
@@ -1261,6 +1263,7 @@ impl GpuContext {
                     (variant >> 16) & 1,
                     (variant >> 17) & 1,
                     (variant >> 18) & 1,
+                    u32::from(variant & CUBIC_FIELD_16_VARIANT != 0),
                     self.depth,
                     KERNEL_SRC
                 );
@@ -1366,12 +1369,42 @@ impl GpuContext {
     }
 
     fn variant(p: &KernelParams, high: bool) -> u32 {
+        let cubic_field_16 = cfg!(all(target_os = "macos", target_arch = "aarch64"))
+            && !high
+            && p.algorithm == 23
+            && p.cubic != 0
+            && p.block_w == 16
+            && p.block_h == 16
+            && p.origin_x == 0
+            && p.origin_y == 0
+            && matches!(p.x_ratio, 1 | 2)
+            && matches!(p.y_ratio, 1 | 2);
+        Self::base_variant(p, high)
+            | if cubic_field_16 {
+                CUBIC_FIELD_16_VARIANT
+            } else {
+                0
+            }
+    }
+
+    fn base_variant(p: &KernelParams, high: bool) -> u32 {
         u32::try_from(p.algorithm & 0xFF).unwrap_or(23)
             | u32::from(p.cubic != 0) << 8
             | u32::from(p.cubic_ref != 0) << 9
             | u32::from(p.has_sad != 0) << 10
             | u32::from(p.linear_luma != 0) << 11
             | u32::from(p.dither != 0 && !high) << 12
+    }
+
+    fn standalone_chroma_variant(variant: u32, params: &KernelParams, high: bool) -> u32 {
+        const FIELD_SAMPLING_MASK: u32 = 0xFF | (1 << 8);
+        let chroma = Self::variant(params, high);
+        let base = variant & !CUBIC_FIELD_16_VARIANT;
+        if (variant ^ chroma) & FIELD_SAMPLING_MASK == 0 {
+            base | (chroma & CUBIC_FIELD_16_VARIANT)
+        } else {
+            base
+        }
     }
 
     unsafe fn upload_motion(
@@ -1496,10 +1529,9 @@ impl GpuContext {
     }
 
     #[allow(clippy::too_many_arguments)]
-    unsafe fn bind_fields(
+    unsafe fn render_fields(
         &self,
         unit: &mut Unit,
-        variant: u32,
         py: &KernelParams,
         motion_key: i64,
         motion_width: usize,
@@ -1508,9 +1540,8 @@ impl GpuContext {
         coverage: (&[u8], &[u8]),
         area: Option<(&[u8], &[u8])>,
         cover: Option<&Cover<'_>>,
-    ) -> Option<(ClKernel, [ClMem; 3])> {
+    ) -> Option<[ClMem; 3]> {
         let count = motion_width.checked_mul(motion_height)?;
-        let k = self.variant_kernel(&mut unit.variant_kernels, variant)?;
         let q = unit.queue;
         unsafe {
             let (base_mem, ext_mem) = self.upload_motion(
@@ -1544,16 +1575,31 @@ impl GpuContext {
             } else {
                 base_mem
             };
-            let fields = [base_mem, ext_mem, mask_mem];
-            for (index, mem) in (4..).zip(fields) {
-                if (self.cl.SetKernelArg)(k, index, size_of::<ClMem>(), (&raw const mem).cast())
-                    != CL_SUCCESS
-                {
-                    return None;
-                }
-            }
-            Some((k, fields))
+            Some([base_mem, ext_mem, mask_mem])
         }
+    }
+
+    fn render_image_args(images: &[ClMem]) -> impl Iterator<Item = (ClUint, &ClMem)> {
+        (4..RENDER_PARAMS_ARG)
+            .chain(RENDER_PARAMS_ARG + 1..)
+            .zip(images)
+    }
+
+    fn bind_render_images(&self, kernel: ClKernel, images: &[ClMem]) -> Option<()> {
+        for (index, mem) in Self::render_image_args(images) {
+            let result = unsafe {
+                (self.cl.SetKernelArg)(
+                    kernel,
+                    index,
+                    size_of::<ClMem>(),
+                    std::ptr::from_ref(mem).cast(),
+                )
+            };
+            if result != CL_SUCCESS {
+                return None;
+            }
+        }
+        Some(())
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1574,8 +1620,12 @@ impl GpuContext {
             self.set_i32(k, 1, stride).then_some(())?;
             (self.cl.SetKernelArg)(k, 2, size_of::<ClMem>(), (&raw const s0.0).cast());
             (self.cl.SetKernelArg)(k, 3, size_of::<ClMem>(), (&raw const s1.0).cast());
-            if (self.cl.SetKernelArg)(k, 7, size_of::<KernelParams>(), (&raw const p).cast())
-                != CL_SUCCESS
+            if (self.cl.SetKernelArg)(
+                k,
+                RENDER_PARAMS_ARG,
+                size_of::<KernelParams>(),
+                (&raw const p).cast(),
+            ) != CL_SUCCESS
             {
                 return None;
             }
@@ -1847,16 +1897,20 @@ impl GpuContext {
     ) -> Option<()> {
         let _readback = self.readbacks.take()?;
         let mut unit = self.acquire();
+        let high = self.depth > 8;
+        let variant = Self::variant(&py, high)
+            | self.mask_variant(still)
+            | if layer.is_some() {
+                layer::LAYER_VARIANT
+            } else {
+                0
+            };
+        let [u_variant, v_variant] =
+            [pu, pv].map(|params| Self::standalone_chroma_variant(variant, &params, high));
         unsafe {
-            let (k, fields) = self.bind_fields(
+            let k = self.variant_kernel(&mut unit.variant_kernels, variant)?;
+            let fields = self.render_fields(
                 &mut unit,
-                Self::variant(&py, self.depth > 8)
-                    | self.mask_variant(still)
-                    | if layer.is_some() {
-                        layer::LAYER_VARIANT
-                    } else {
-                        0
-                    },
                 &py,
                 motion_key,
                 motion_width,
@@ -1866,28 +1920,25 @@ impl GpuContext {
                 area,
                 cover,
             )?;
+            let mut images = [std::ptr::null_mut(); 8];
+            images[..3].copy_from_slice(&fields);
+            let mut image_count = 3;
             let mut waits = Self::source_waits(src0[0], src1[0]);
             if let Some(StillMask(still, ready)) = still {
-                if (self.cl.SetKernelArg)(k, 8, size_of::<ClMem>(), (&raw const still).cast())
-                    != CL_SUCCESS
-                {
-                    return None;
-                }
+                images[image_count] = still;
+                image_count += 1;
                 if !ready.is_null() {
                     waits.push(ready);
                 }
             }
             if let Some(layer) = layer {
-                let base = 8 + ClUint::from(still.is_some());
                 let [fit, cover] = layer.images();
-                for (index, mem) in (base..).zip([fit, cover, src0[1].0, src1[1].0]) {
-                    if (self.cl.SetKernelArg)(k, index, size_of::<ClMem>(), (&raw const mem).cast())
-                        != CL_SUCCESS
-                    {
-                        return None;
-                    }
-                }
+                images[image_count..image_count + 4]
+                    .copy_from_slice(&[fit, cover, src0[1].0, src1[1].0]);
+                image_count += 4;
             }
+            let images = &images[..image_count];
+            self.bind_render_images(k, images)?;
             let q = unit.queue;
             let xq = unit.xfer;
             let depth = if self.depth > 8 { 2 } else { 1 };
@@ -1919,17 +1970,7 @@ impl GpuContext {
                         &mut unit.variant_kernels,
                         Self::variant(&pu, false) | UV_PAIR_VARIANT,
                     )?;
-                    for (index, mem) in (4..).zip(fields) {
-                        if (self.cl.SetKernelArg)(
-                            kernel,
-                            index,
-                            size_of::<ClMem>(),
-                            (&raw const mem).cast(),
-                        ) != CL_SUCCESS
-                        {
-                            return None;
-                        }
-                    }
+                    self.bind_render_images(kernel, &fields)?;
                     if (self.cl.SetKernelArg)(
                         kernel,
                         8,
@@ -1973,9 +2014,24 @@ impl GpuContext {
                             &raw mut kernel_done,
                         )
                     } else {
+                        let mut kernel_for = |plane_variant| {
+                            if plane_variant == variant {
+                                return Some(k);
+                            }
+                            let kernel =
+                                self.variant_kernel(&mut unit.variant_kernels, plane_variant)?;
+                            self.bind_render_images(kernel, images)?;
+                            Some(kernel)
+                        };
+                        let ku = kernel_for(u_variant)?;
+                        let kv = if u_variant == v_variant {
+                            ku
+                        } else {
+                            kernel_for(v_variant)?
+                        };
                         self.enqueue_plane(
                             q,
-                            k,
+                            ku,
                             u_mem,
                             su / depth,
                             pu,
@@ -1987,7 +2043,7 @@ impl GpuContext {
                         .and_then(|()| {
                             self.enqueue_plane(
                                 q,
-                                k,
+                                kv,
                                 v_mem,
                                 sv / depth,
                                 pv,
@@ -2322,6 +2378,9 @@ pub(crate) const KERNEL_SRC: &str = r"
 #ifndef UV_PAIR
 #define UV_PAIR 0
 #endif
+#ifndef CUBIC_FIELD_16
+#define CUBIC_FIELD_16 0
+#endif
 #define LAYER_MIN 0.2f
 #define LAYER_GROUP 3
 #define LAYER_FILL 4.0f
@@ -2365,21 +2424,10 @@ inline float median3(float a, float b, float c) {
     return fmax(lo, fmin(hi, c));
 }
 
-inline float4 cubic_sample(read_only image2d_t image, float2 position) {
-    float2 grid = position - (float2)(0.5f, 0.5f);
-    float2 index = floor(grid);
-    float2 f = grid - index;
-    float2 r = 1.0f - f;
-    float2 r2 = r * r;
-    float2 f2 = f * f;
-    float2 w0 = 1.0f/6.0f * r2 * r;
-    float2 w1 = 2.0f/3.0f - 0.5f * f2 * (2.0f - f);
-    float2 w2 = 2.0f/3.0f - 0.5f * r2 * (2.0f - r);
-    float2 w3 = 1.0f/6.0f * f2 * f;
-    float2 g0 = w0 + w1;
-    float2 g1 = w2 + w3;
-    float2 h0 = (w1 / g0) - 0.5f + index;
-    float2 h1 = (w3 / g1) + 1.5f + index;
+#define CUBIC_OUTER_WEIGHT(t) (1.0f/6.0f * ((t)*(t)) * (t))
+#define CUBIC_INNER_WEIGHT(t) (2.0f/3.0f - 0.5f * ((t)*(t)) * (2.0f - (t)))
+
+inline float4 cubic_tap_sample(read_only image2d_t image, float2 h0, float2 h1, float2 g0) {
     float4 a = read_imagef(image, linear_sampler, h0);
     float4 b = read_imagef(image, linear_sampler, (float2)(h1.x, h0.y));
     float4 c = read_imagef(image, linear_sampler, (float2)(h0.x, h1.y));
@@ -2389,6 +2437,22 @@ inline float4 cubic_sample(read_only image2d_t image, float2 position) {
     return mix(b, a, g0.x);
 }
 
+inline float4 cubic_sample(read_only image2d_t image, float2 position) {
+    float2 grid = position - (float2)(0.5f, 0.5f);
+    float2 index = floor(grid);
+    float2 f = grid - index;
+    float2 r = 1.0f - f;
+    float2 w0 = CUBIC_OUTER_WEIGHT(r);
+    float2 w1 = CUBIC_INNER_WEIGHT(f);
+    float2 w2 = CUBIC_INNER_WEIGHT(r);
+    float2 w3 = CUBIC_OUTER_WEIGHT(f);
+    float2 g0 = w0 + w1;
+    float2 g1 = w2 + w3;
+    float2 h0 = (w1 / g0) - 0.5f + index;
+    float2 h1 = (w3 / g1) + 1.5f + index;
+    return cubic_tap_sample(image, h0, h1, g0);
+}
+
 inline float4 field_sample(read_only image2d_t image, float2 position, int cubic) {
 #if CUBIC
     return cubic_sample(image, position);
@@ -2396,6 +2460,54 @@ inline float4 field_sample(read_only image2d_t image, float2 position, int cubic
     return read_imagef(image, field_sampler, position);
 #endif
 }
+
+#if CUBIC_FIELD_16
+typedef struct {
+    float2 h0, h1, g0;
+} RenderFieldCoords;
+
+#define CUBIC_FIELD_G0(f, r) (CUBIC_OUTER_WEIGHT(r) + CUBIC_INNER_WEIGHT(f))
+#define CUBIC_FIELD_G1(f, r) (CUBIC_INNER_WEIGHT(r) + CUBIC_OUTER_WEIGHT(f))
+#define CUBIC_FIELD_TUPLE(f, r) (float4)( \
+    CUBIC_INNER_WEIGHT(f) / CUBIC_FIELD_G0(f, r) - 0.5f, \
+    CUBIC_OUTER_WEIGHT(f) / CUBIC_FIELD_G1(f, r) + 1.5f, \
+    CUBIC_FIELD_G0(f, r), 0.0f)
+#define CUBIC_FIELD_STEP(n) CUBIC_FIELD_TUPLE((n)/16.0f, (16-(n))/16.0f)
+
+__constant float4 cubic_field_steps[16] = {
+    CUBIC_FIELD_STEP(0),  CUBIC_FIELD_STEP(1),  CUBIC_FIELD_STEP(2),  CUBIC_FIELD_STEP(3),
+    CUBIC_FIELD_STEP(4),  CUBIC_FIELD_STEP(5),  CUBIC_FIELD_STEP(6),  CUBIC_FIELD_STEP(7),
+    CUBIC_FIELD_STEP(8),  CUBIC_FIELD_STEP(9),  CUBIC_FIELD_STEP(10), CUBIC_FIELD_STEP(11),
+    CUBIC_FIELD_STEP(12), CUBIC_FIELD_STEP(13), CUBIC_FIELD_STEP(14), CUBIC_FIELD_STEP(15)
+};
+
+inline RenderFieldCoords render_field_coords(int2 pixel, const Params *p) {
+    uint2 shifted = convert_uint2(pixel) * (uint2)(p->x_ratio, p->y_ratio) + 8u;
+    float2 index = convert_float2(shifted >> 4) - 1.0f;
+    float4 x = cubic_field_steps[shifted.x & 15u];
+    float4 y = cubic_field_steps[shifted.y & 15u];
+    RenderFieldCoords coords = {
+        (float2)(x.x, y.x) + index, (float2)(x.y, y.y) + index, (float2)(x.z, y.z)
+    };
+    return coords;
+}
+
+inline float4 render_field_sample(read_only image2d_t image, RenderFieldCoords coords) {
+    return cubic_tap_sample(image, coords.h0, coords.h1, coords.g0);
+}
+#else
+typedef float2 RenderFieldCoords;
+
+inline RenderFieldCoords render_field_coords(int2 pixel, const Params *p) {
+    return native_divide(
+        convert_float2(pixel * (int2)(p->x_ratio, p->y_ratio) - (int2)(p->origin_x, p->origin_y)),
+        (float2)(p->block_w, p->block_h));
+}
+
+inline float4 render_field_sample(read_only image2d_t image, RenderFieldCoords coords) {
+    return field_sample(image, coords, CUBIC);
+}
+#endif
 
 inline float2 moved(const Params *p, float vx, float vy, int time) {
     float2 step = native_divide(
@@ -2578,16 +2690,14 @@ kernel void render_frame(
     int x = get_global_id(0), y = get_global_id(1);
     if (x >= p.width || y >= p.height) return;
 
-    float2 field_position = native_divide(
-        (float2)(x*p.x_ratio-p.origin_x, y*p.y_ratio-p.origin_y),
-        (float2)(p.block_w, p.block_h));
-    float4 vector = field_sample(vectors, field_position, CUBIC);
+    RenderFieldCoords coords = render_field_coords((int2)(x, y), &p);
+    float4 vector = render_field_sample(vectors, coords);
 #if ALGO >= 21 || HAS_SAD
-    float4 mask = field_sample(masks, field_position, CUBIC);
+    float4 mask = render_field_sample(masks, coords);
 #endif
     float time = native_divide((float)p.phase, 256.0f);
 #if UV_PAIR
-    float4 ext = field_sample(vectors_ext, field_position, CUBIC);
+    float4 ext = render_field_sample(vectors_ext, coords);
     float result_u = blend_value(source_f, source_b, &p, vector, mask, ext, 0.0f, 0.0f, time);
     Params other = p;
     other.offset_x = offset_x_v;
@@ -2637,7 +2747,7 @@ kernel void render_frame(
     float ref_f0 = base_sample(source_f, &p);
 #endif
 #if ALGO == 23
-    float4 ext = field_sample(vectors_ext, field_position, CUBIC);
+    float4 ext = render_field_sample(vectors_ext, coords);
     float ref_bb = linear_source_sample(source_b, &p, ext.z, ext.y, 256-p.phase);
     float ref_ff = linear_source_sample(source_f, &p, ext.x, ext.w, p.phase);
 #endif
@@ -3339,7 +3449,19 @@ fn chroma_pair_supported(
 
 #[cfg(test)]
 mod tests {
-    use super::{KernelParams, chroma_pair_supported, direct_host_transfers};
+    use super::{GpuContext, KernelParams, chroma_pair_supported, direct_host_transfers};
+
+    #[test]
+    fn render_images_skip_the_params_argument() {
+        let images = [std::ptr::null_mut(); 8];
+        let expected = [4, 5, 6, 8, 9, 10, 11, 12];
+        for count in [3, 4, 7, 8] {
+            let slots: Vec<_> = GpuContext::render_image_args(&images[..count])
+                .map(|(index, _)| index)
+                .collect();
+            assert_eq!(slots, expected[..count]);
+        }
+    }
 
     #[test]
     fn direct_host_transfers_are_limited_to_eight_bit_apple_silicon() {
@@ -3387,6 +3509,96 @@ mod tests {
             ..u
         };
         [y, u, v]
+    }
+
+    #[test]
+    fn cubic_render_selects_a_variant_for_sixteen_pixel_fields() {
+        let [y, u, v] = plane_params();
+        let specialized = cfg!(all(target_os = "macos", target_arch = "aarch64"));
+
+        for plane in [y, u, v] {
+            let variant = GpuContext::variant(&plane, false);
+            for generic in [
+                KernelParams {
+                    block_w: 8,
+                    ..plane
+                },
+                KernelParams {
+                    block_h: 8,
+                    ..plane
+                },
+                KernelParams {
+                    origin_x: 1,
+                    ..plane
+                },
+                KernelParams {
+                    origin_y: 1,
+                    ..plane
+                },
+                KernelParams {
+                    x_ratio: 4,
+                    ..plane
+                },
+                KernelParams {
+                    y_ratio: 4,
+                    ..plane
+                },
+            ] {
+                assert_eq!(
+                    variant != GpuContext::variant(&generic, false),
+                    specialized,
+                    "{plane:?} versus {generic:?}",
+                );
+            }
+        }
+
+        for plane in [
+            KernelParams { algorithm: 22, ..y },
+            KernelParams { cubic: 0, ..y },
+        ] {
+            assert_eq!(
+                GpuContext::variant(&plane, false),
+                GpuContext::variant(
+                    &KernelParams {
+                        origin_x: 1,
+                        ..plane
+                    },
+                    false
+                ),
+            );
+        }
+
+        assert_eq!(
+            GpuContext::variant(&y, true),
+            GpuContext::variant(&KernelParams { origin_x: 1, ..y }, true),
+        );
+    }
+
+    #[test]
+    fn standalone_chroma_respects_the_shared_render_variant() {
+        let [y, u, _] = plane_params();
+        let variant = GpuContext::variant(&y, false);
+        let generic = GpuContext::variant(&KernelParams { block_w: 8, ..y }, false);
+        let unsupported_ratio = KernelParams { x_ratio: 4, ..u };
+        assert_eq!(
+            GpuContext::standalone_chroma_variant(variant, &unsupported_ratio, false),
+            generic,
+        );
+        assert_eq!(
+            GpuContext::standalone_chroma_variant(generic, &u, false),
+            variant,
+        );
+
+        for luma in [
+            KernelParams { algorithm: 22, ..y },
+            KernelParams { cubic: 0, ..y },
+        ] {
+            let variant = GpuContext::variant(&luma, false);
+            assert_eq!(
+                GpuContext::standalone_chroma_variant(variant, &u, false),
+                variant,
+            );
+        }
     }
 
     #[test]

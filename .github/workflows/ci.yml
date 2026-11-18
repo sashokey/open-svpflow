@@ -29,7 +29,12 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - name: Verify upstream engine outside reviewed optimizations
-        run: git diff --exit-code 85d9cbe4077dc213eb04ea65a7435c9361fdc5c3 -- crates Cargo.toml Cargo.lock ':(exclude)crates/svpflow1/src/analyse/metric.rs' ':(exclude)crates/svpflow2/src/gpu.rs'
+        run: >
+          git diff --exit-code 85d9cbe4077dc213eb04ea65a7435c9361fdc5c3 -- crates Cargo.toml Cargo.lock
+          ':(exclude)crates/svpflow1/src/analyse/metric.rs'
+          ':(exclude)crates/svpflow1/src/super_build.rs'
+          ':(exclude)crates/svpflow2/src/gpu.rs'
+          ':(exclude)crates/svpflow2/src/gpu/blend.rs'
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.98.1 --profile minimal
       - name: Test Python adapter and packaging

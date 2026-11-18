@@ -8,6 +8,8 @@ Open SVPflow brings motion-compensated frame interpolation to everyday movie pla
 
 - A fix for packed motion vectors with a negative vertical component. Both readers restore the horizontal component affected by the signed vertical value.
 - ARM64 NEON kernels for SAD and SATD in motion estimation. SAD sums absolute pixel differences. SATD sums absolute differences after a Hadamard transform. The optimized kernels preserve the integer costs used to choose motion vectors.
+- ARM64 NEON for six-tap cubic downsampling in Super. Both passes preserve the integer weights, rounding and edge handling. Remaining samples use the scalar path.
+- Precomputed cubic weights for 8-bit OpenCL shader 23 on Apple Silicon. The zero-origin 16-pixel field grid uses the same texture reads and blend order with shared coordinates and weights.
 - Shared GPU motion-field sampling for compatible 8-bit YUV420 chroma planes with shader 23. A paired U/V dispatch uses the existing pixel sampling and rounding helpers. Eligibility checks cover packed source offsets, matching plane parameters, and compatibility with optional effects.
 - Batched OpenCL uploads and direct readback for 8-bit video on Apple Silicon. The blocking V upload depends on the queued Y and U uploads. GPU output goes directly into the destination planes. On error, wait for accepted transfers before returning frame buffers. If OpenCL cannot confirm completion, abort the host process to protect that memory.
 - A Python launcher and VapourSynth graph that validate settings, prepare input frames, and apply interpolation at the requested rate. The mpv input normalizer can fit the processing size to the rendered video while preserving its aspect ratio. The graph crops any padding added during frame preparation.

@@ -446,7 +446,20 @@ fn vertical_cubic(out: &mut [u8], rows: [&[u8]; 6]) {
     let [m2, m1, c0, p1, p2, p3] = rows.map(|row| &row[..n]);
     #[cfg(target_feature = "avx2")]
     let start = vertical_cubic_avx2(out, [m2, m1, c0, p1, p2, p3]);
-    #[cfg(not(target_feature = "avx2"))]
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon"
+    ))]
+    let start = cubic_neon::vertical(out, [m2, m1, c0, p1, p2, p3]);
+    #[cfg(not(any(
+        target_feature = "avx2",
+        all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "neon"
+        )
+    )))]
     let start = 0;
     for i in start..n {
         let sum = u16::from(m2[i])
@@ -507,7 +520,20 @@ fn cubic_row(src: &[u8], out: &mut [u8]) {
     let mean = |a: u8, b: u8| ((u16::from(a) + u16::from(b) + 1) >> 1) as u8;
     #[cfg(target_feature = "avx2")]
     let start = cubic_interior_avx2(src, out);
-    #[cfg(not(target_feature = "avx2"))]
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon"
+    ))]
+    let start = cubic_neon::horizontal(src, out);
+    #[cfg(not(any(
+        target_feature = "avx2",
+        all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "neon"
+        )
+    )))]
     let start = 1;
     for i in start..width - 1 {
         let s = &src[2 * i - 2..2 * i + 4];
@@ -562,6 +588,64 @@ fn cubic_interior_avx2(src: &[u8], out: &mut [u8]) -> usize {
         }
     }
     i
+}
+
+#[cfg(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "neon"
+))]
+mod cubic_neon {
+    use std::arch::aarch64::{
+        uint8x8_t, uint8x8x2_t, vaddl_u8, vld1_u8, vld2_u8, vmlaq_n_u16, vrshrn_n_u16, vst1_u8,
+    };
+
+    pub(super) fn vertical(out: &mut [u8], rows: [&[u8]; 6]) -> usize {
+        let len = out.len();
+        let rows = rows.map(|row| row[..len].as_ptr());
+        let dst = out.as_mut_ptr();
+        let mut x = 0;
+        while x + 8 <= len {
+            unsafe {
+                let taps = rows.map(|row| vld1_u8(row.add(x)));
+                vst1_u8(dst.add(x), filter(taps));
+            }
+            x += 8;
+        }
+        #[cfg(test)]
+        super::tests::VERTICAL_NEON_PIXELS.set(x);
+        x
+    }
+
+    pub(super) fn horizontal(src: &[u8], out: &mut [u8]) -> usize {
+        let width = out.len();
+        let src = src[..2 * width].as_ptr();
+        let dst = out.as_mut_ptr();
+        let mut x = 2;
+        while x + 8 < width {
+            unsafe {
+                let p = src.add(2 * x - 2);
+                let uint8x8x2_t(m2, m1) = vld2_u8(p);
+                let uint8x8x2_t(c0, p1) = vld2_u8(p.add(2));
+                let uint8x8x2_t(p2, p3) = vld2_u8(p.add(4));
+                vst1_u8(dst.add(x), filter([m2, m1, c0, p1, p2, p3]));
+            }
+            x += 8;
+        }
+        #[cfg(test)]
+        super::tests::HORIZONTAL_NEON_PIXELS.set(x - 2);
+        x
+    }
+
+    #[inline]
+    #[target_feature(enable = "neon")]
+    fn filter([m2, m1, c0, p1, p2, p3]: [uint8x8_t; 6]) -> uint8x8_t {
+        let outer = vaddl_u8(m2, p3);
+        let inner = vaddl_u8(m1, p2);
+        let center = vaddl_u8(c0, p1);
+        let sum = vmlaq_n_u16(vmlaq_n_u16(outer, inner, 5), center, 10);
+        vrshrn_n_u16::<5>(sum)
+    }
 }
 
 fn vertical_average(out: &mut [u8], a: &[u8], b: &[u8]) {
@@ -895,5 +979,90 @@ fn apply_half_pel(kernel: HalfPel, out: &mut [u8], taps: [&[u8]; 6]) {
     for i in 0..n {
         let t = |r: &[u8]| i32::from(r[i]);
         out[i] = kernel.apply([t(m2), t(m1), t(c0), t(p1), t(p2), t(p3)]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cubic_row, vertical_cubic};
+
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon"
+    ))]
+    std::thread_local! {
+        pub(super) static VERTICAL_NEON_PIXELS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+        pub(super) static HORIZONTAL_NEON_PIXELS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+    }
+
+    fn cubic_reference(samples: [u8; 6]) -> u8 {
+        let sum: u32 = samples
+            .into_iter()
+            .zip([1, 5, 10, 10, 5, 1])
+            .map(|(sample, weight)| u32::from(sample) * weight)
+            .sum();
+        ((sum + 16) / 32) as u8
+    }
+
+    #[test]
+    fn cubic_vertical_filters_complete_groups_and_tail() {
+        for width in [0, 7, 8, 9, 15, 16, 18, 31, 32, 33] {
+            let rows: [Vec<u8>; 6] = std::array::from_fn(|row| {
+                (0..width)
+                    .map(|x| ((x * 23 + row * 47 + x * row * 29) % 256) as u8)
+                    .collect()
+            });
+            let expected: Vec<_> = (0..width)
+                .map(|x| cubic_reference(rows.each_ref().map(|row| row[x])))
+                .collect();
+            let mut out = vec![0xa5; width + 2];
+            vertical_cubic(&mut out[1..=width], rows.each_ref().map(Vec::as_slice));
+            assert_eq!(&out[1..=width], expected, "width {width}");
+            assert_eq!((out[0], out[width + 1]), (0xa5, 0xa5));
+            #[cfg(all(
+                target_arch = "aarch64",
+                target_endian = "little",
+                target_feature = "neon"
+            ))]
+            assert_eq!(
+                VERTICAL_NEON_PIXELS.replace(0),
+                width / 8 * 8,
+                "vertical NEON coverage at width {width}"
+            );
+        }
+    }
+
+    #[test]
+    fn cubic_horizontal_preserves_boundaries_and_tail() {
+        for width in [8, 10, 11, 12, 18, 19, 20, 34, 35, 36] {
+            let src: Vec<_> = (0..2 * width)
+                .map(|x| ((x * 61 + (x % 7) * 31) % 256) as u8)
+                .collect();
+            let average =
+                |x: usize| (u16::from(src[2 * x]) + u16::from(src[2 * x + 1])).div_ceil(2) as u8;
+            let expected: Vec<_> = (0..width)
+                .map(|x| match x {
+                    0 => average(0),
+                    x if x + 1 == width => average(x),
+                    1 => cubic_reference([average(0), src[1], src[2], src[3], src[4], src[5]]),
+                    _ => cubic_reference(src[2 * x - 2..2 * x + 4].try_into().unwrap()),
+                })
+                .collect();
+            let mut out = vec![0xa5; width + 2];
+            cubic_row(&src, &mut out[1..=width]);
+            assert_eq!(&out[1..=width], expected, "width {width}");
+            assert_eq!((out[0], out[width + 1]), (0xa5, 0xa5));
+            #[cfg(all(
+                target_arch = "aarch64",
+                target_endian = "little",
+                target_feature = "neon"
+            ))]
+            assert_eq!(
+                HORIZONTAL_NEON_PIXELS.replace(0),
+                (width - 3) / 8 * 8,
+                "horizontal NEON coverage at width {width}"
+            );
+        }
     }
 }
